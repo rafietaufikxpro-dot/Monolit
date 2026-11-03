@@ -1,0 +1,12 @@
+# build artifacts
+build/
+*.elf
+*.nro
+*.nacp
+*.lst
+*.map
+dist/
+# local data - never commit saves, banks or backups
+*.bank
+*.bank.bak
+*.bak
