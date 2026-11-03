@@ -4,6 +4,11 @@
 between supported game saves and a bank on your SD card—no internet connection
 or Pokémon HOME required.
 
+> **Development warning:** Monolit is still in development and has not been
+> tested on a real console with real saves. Features and behavior may change,
+> and data loss is possible. Use only with backed-up saves and at your own risk.
+> See [Safety and limitations](#safety-and-limitations) before using it.
+>
 > **Warning:** Monolit modifies game saves and runs on consoles with custom
 > firmware. Always make a backup and understand the risks before using it.
 > This project is not affiliated with Nintendo, Creatures Inc., or GAME FREAK.
@@ -31,31 +36,6 @@ Pokémon in the bank can only be returned to games that use the same format
 (for example, Sword ↔ Shield or Scarlet ↔ Violet). Cross-generation conversion
 like Pokémon HOME is not available.
 
-## Build
-
-1. Install devkitPro and the required Switch packages:
-
-   ```sh
-   sudo dkp-pacman -S switch-dev switch-sdl2 switch-sdl2_ttf switch-pkg-config
-   ```
-
-2. Set `DEVKITPRO`, then build:
-
-   ```sh
-   export DEVKITPRO=/opt/devkitpro
-   make
-   ```
-
-3. Copy `Monolit.nro` to `sdmc:/switch/`.
-
-To run the core logic tests on PC:
-
-```sh
-make -f Makefile.host test
-```
-
-After changing the version or author, run `make clean && make`. An icon is
-optional; place a 256 × 256 `icon.jpg` in the project directory.
 
 ## Controls
 
