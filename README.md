@@ -1,154 +1,157 @@
 # Monolit
 
-**Bank Pokémon offline untuk Nintendo Switch CFW.** Salin atau pindahkan Pokémon
-antara save game dan bank di kartu SD—tanpa internet dan tanpa Pokémon HOME.
+**An offline Pokémon bank for Nintendo Switch CFW.** Copy or move Pokémon
+between supported game saves and a bank on your SD card—no internet connection
+or Pokémon HOME required.
 
-> **Peringatan:** Monolit mengubah save game dan digunakan pada konsol dengan
-> custom firmware. Selalu buat backup dan pahami risiko sebelum menggunakannya.
-> Proyek ini tidak berafiliasi dengan Nintendo, Creatures Inc., atau GAME FREAK.
+> **Warning:** Monolit modifies game saves and runs on consoles with custom
+> firmware. Always make a backup and understand the risks before using it.
+> This project is not affiliated with Nintendo, Creatures Inc., or GAME FREAK.
 
-## Fitur
+## Features
 
-- Simpan Pokémon di bank lokal pada kartu SD.
-- Salin atau pindahkan Pokémon antara bank dan save game yang didukung.
-- Pilih user Switch saat ada lebih dari satu user.
-- Tulis save dengan backup dan verifikasi.
-- Konversi tahap awal antara Sword/Shield dan Brilliant Diamond/Shining Pearl.
+- Store Pokémon in a local bank on your SD card.
+- Copy or move Pokémon between the bank and supported game saves.
+- Select a Switch user when more than one user is available.
+- Write saves with backup and verification.
+- Early-stage conversion between Sword/Shield and Brilliant Diamond/Shining Pearl.
 
-## Game yang didukung
+## Supported games
 
-| Game | Format Pokémon | Nama file save |
+| Game | Pokémon format | Save filename |
 |---|---|---|
 | Pokémon Sword / Shield | PK8 | `main` |
 | Pokémon Brilliant Diamond / Shining Pearl | PB8 | `SaveData.bin` |
 | Pokémon Legends: Arceus | PA8 | `main` |
 | Pokémon Scarlet / Violet | PK9 | `main` |
 
-Game yang belum didukung: Let's Go Pikachu/Eevee dan Pokémon Legends: Z-A.
+Not yet supported: Let's Go Pikachu/Eevee and Pokémon Legends: Z-A.
 
-Pokémon di bank hanya dapat dikembalikan ke game dengan format yang sama
-(misalnya Sword ↔ Shield atau Scarlet ↔ Violet). Konversi lintas generasi
-seperti Pokémon HOME tidak tersedia.
+Pokémon in the bank can only be returned to games that use the same format
+(for example, Sword ↔ Shield or Scarlet ↔ Violet). Cross-generation conversion
+like Pokémon HOME is not available.
 
 ## Build
 
-1. Pasang devkitPro dan paket Switch yang diperlukan:
+1. Install devkitPro and the required Switch packages:
 
    ```sh
    sudo dkp-pacman -S switch-dev switch-sdl2 switch-sdl2_ttf switch-pkg-config
    ```
 
-2. Atur `DEVKITPRO`, lalu build:
+2. Set `DEVKITPRO`, then build:
 
    ```sh
    export DEVKITPRO=/opt/devkitpro
    make
    ```
 
-3. Salin `Monolit.nro` ke `sdmc:/switch/`.
+3. Copy `Monolit.nro` to `sdmc:/switch/`.
 
-Untuk tes logika inti di PC:
+To run the core logic tests on PC:
 
 ```sh
 make -f Makefile.host test
 ```
 
-Jika mengubah versi atau author, jalankan `make clean && make`. Ikon bersifat
-opsional; letakkan `icon.jpg` berukuran 256 × 256 di folder proyek.
+After changing the version or author, run `make clean && make`. An icon is
+optional; place a 256 × 256 `icon.jpg` in the project directory.
 
-## Kontrol
+## Controls
 
 ### Menu
 
-| Tombol | Aksi |
+| Button | Action |
 |---|---|
-| Atas / Bawah | Pilih save |
-| A | Buka save |
-| Y | Lihat bank |
-| X | Ganti user |
-| + | Keluar |
+| Up / Down | Select a save |
+| A | Open save |
+| Y | View bank |
+| X | Change user |
+| + | Exit |
 
-### Box Pokémon
+### Pokémon box
 
-| Tombol | Aksi |
+| Button | Action |
 |---|---|
-| D-pad | Pindah slot |
-| A | Salin Pokémon ke bank |
-| X | Pindahkan Pokémon ke bank |
-| Y | Ambil Pokémon dari bank ke slot kosong |
-| L / R | Ganti box |
-| + | Tulis perubahan ke save |
-| B | Kembali |
+| D-pad | Move between slots |
+| A | Copy Pokémon to the bank |
+| X | Move Pokémon to the bank |
+| Y | Retrieve a Pokémon from the bank into an empty slot |
+| L / R | Change box |
+| + | Write changes to save |
+| B | Go back |
 
-Box menampilkan 6 × 5 slot. Slot yang berubah diberi bingkai kuning untuk
-Pokémon yang ditambahkan dan merah untuk Pokémon yang dikeluarkan. UI memakai
-SDL2 dan font sistem Switch; tidak ada aset bawaan.
+Each box displays 6 × 5 slots. Changed slots are outlined in yellow for added
+Pokémon and red for removed Pokémon. The UI uses SDL2 and the Switch system
+font; no bundled assets are required.
 
-## Konversi lintas game
+## Cross-game conversion
 
-Konversi tahap pertama mendukung Pokémon Sword/Shield ke Brilliant
-Diamond/Shining Pearl dan sebaliknya, selama spesies dan form tersedia di game
-tujuan. Mengikuti aturan Pokémon HOME melalui PKHeX, move akan disesuaikan
-dengan learnset game tujuan dan held item dihapus.
+The first conversion stage supports Pokémon Sword/Shield to Brilliant
+Diamond/Shining Pearl and vice versa, as long as the species and form are
+available in the destination game. Following Pokémon HOME rules via PKHeX,
+moves are adjusted to the destination game's learnset and held items are removed.
 
-Telur, Nincada/Spinda, dan Pokémon yang sebelumnya dipindahkan dari game lain
-ditolak. Hasil konversi hanya untuk penggunaan offline dan tidak memiliki
-tracker HOME yang sah. Konversi PA8 dan PK9 belum didukung.
+Eggs, Nincada/Spinda, and Pokémon previously transferred from another game are
+rejected. Converted Pokémon are for offline use only and do not have a valid
+HOME tracker. PA8 and PK9 conversion are not yet supported.
 
-## User Switch dan DLC
+## Switch users and DLC
 
-Save dibaca berdasarkan user Switch. Jika hanya ada satu user, user tersebut
-dipilih otomatis. Jika ada beberapa user (misalnya saat aplikasi dibuka dari
-album/applet), pilih user saat aplikasi dimulai atau tekan **X** di menu untuk
-menggantinya.
+Saves are read for the selected Switch user. If there is only one user, it is
+selected automatically. If there are multiple users (for example, when the
+application is launched from the Album/applet), select a user at startup or
+press **X** in the menu to change users.
 
-Saat memasukkan Pokémon ke save, Monolit membandingkan DLC save asal (saat
-Pokémon disimpan ke bank) dengan save tujuan. DLC yang diperiksa:
+When placing a Pokémon into a save, Monolit compares the DLC in the source save
+(when the Pokémon was stored in the bank) with the destination save. The DLC
+checked is:
 
-- Sword/Shield: Isle of Armor dan Crown Tundra
-- Scarlet/Violet: The Teal Mask dan The Indigo Disk
+- Sword/Shield: Isle of Armor and Crown Tundra
+- Scarlet/Violet: The Teal Mask and The Indigo Disk
 
-Jika save tujuan belum memiliki DLC yang terdeteksi, Monolit meminta konfirmasi.
-Pemeriksaan ini hanya peringatan berbasis heuristik, bukan pemeriksaan legalitas.
+If the destination save does not appear to have the required DLC, Monolit asks
+for confirmation. This is a heuristic warning only, not a legality check.
 
-## Keamanan dan batasan
+## Safety and limitations
 
-- Perubahan hanya disimpan di memori sampai tombol **+** ditekan.
-- Sebelum menulis, hash/checksum diverifikasi dan backup save dibuat di
-  `sdmc:/switch/Monolit/backups/`. Hasil tulisan dibaca ulang dan dibandingkan.
-- Entri bank baru dihapus hanya setelah save berhasil ditulis.
-- Maksimal 10 backup terbaru per game disimpan; backup yang lebih lama dirapikan
-  otomatis.
-- File bank ditulis secara atomik dan dibaca ulang. Jika file utama hilang atau
-  rusak, bank dipulihkan dari `monolit.bank.bak`. File bank yang gagal dibaca
-  (misalnya karena error SD) tidak dianggap kosong.
-- Buat backup save menggunakan Checkpoint sebelum penggunaan pertama.
-- Pokémon yang dimasukkan tidak mendaftarkan Pokédex. Hindari memindahkan
-  Pokémon yang sedang ada di battle team.
-- Layar peringatan risiko ban, backup, dan afiliasi ditampilkan setiap aplikasi
-  dibuka.
+- Changes are kept in memory until you press **+**.
+- Before writing, the hash/checksum is verified and a save backup is created in
+  `sdmc:/switch/Monolit/backups/`. The written save is read back and compared.
+- New bank entries are removed only after the save is successfully written.
+- The 10 most recent backups per game are kept; older backups are cleaned up
+  automatically.
+- Bank files are written atomically and read back for verification. If the
+  primary file is missing or damaged, the bank is restored from
+  `monolit.bank.bak`. A bank file that cannot be read (for example, due to an SD
+  card error) is never treated as empty.
+- Back up your save with Checkpoint before first use.
+- Pokémon added to a save are not registered in the Pokédex. Avoid moving
+  Pokémon currently in your battle team.
+- A warning about ban risks, backups, and affiliation is shown every time the
+  application starts.
 
-Belum diuji di konsol asli dengan save asli. Tes otomatis hanya mencakup logika
-inti di PC. Lihat [`AI_CONTEXT.md`](AI_CONTEXT.md) untuk checklist pengujian
-sebelum memakai Monolit pada save yang penting.
+Monolit has not been tested on a real console with real saves. Automated tests
+cover only core logic on PC. See [`AI_CONTEXT.md`](AI_CONTEXT.md) for the test
+checklist before using Monolit with important saves.
 
-## Peringatan penting
+## Important warnings
 
-- **Risiko layanan online:** Menjalankan CFW dan homebrew melanggar ToS/EULA
-  Nintendo dan dapat menyebabkan konsol diblokir dari layanan online, termasuk
-  Nintendo Switch Online. Gunakan dengan risiko sendiri.
-- **Tanpa jaminan:** Aplikasi ini menulis ke save game. Selalu buat backup.
-- **Bukan produk resmi:** Pokémon dan nama game terkait adalah merek dagang
-  pemiliknya. Monolit tidak berafiliasi dengan pemilik merek tersebut dan tidak
-  untuk dijual.
+- **Online service risk:** Running CFW and homebrew violates Nintendo's
+  ToS/EULA and may result in a console being banned from online services,
+  including Nintendo Switch Online. Use at your own risk.
+- **No warranty:** This application writes to game saves. Always make a backup.
+- **Not an official product:** Pokémon and related game names are trademarks of
+  their respective owners. Monolit is not affiliated with them and is not for
+  sale.
 
-## Lisensi dan atribusi
+## License and attribution
 
-Monolit dirilis di bawah **GNU GPL v3.0**. Offset, kunci blok, enkripsi, dan
-tabel diambil dari [PKHeX](https://github.com/kwsch/PKHeX), yang berlisensi
-GPL-3.0. Lihat [`LICENSE`](LICENSE) dan [`NOTICE.md`](NOTICE.md) untuk detail
-lisensi dan atribusi. Setiap rilis `.nro` wajib disertai source; ikuti
-[`RELEASING.md`](RELEASING.md).
+Monolit is released under the **GNU GPL v3.0**. Offsets, block keys,
+encryption, and tables are derived from [PKHeX](https://github.com/kwsch/PKHeX),
+which is licensed under GPL-3.0. See [`LICENSE`](LICENSE) and
+[`NOTICE.md`](NOTICE.md) for license details and attributions. Every `.nro`
+release must include its source; see [`RELEASING.md`](RELEASING.md).
 
 ```text
 Monolit - offline Pokemon bank for Switch CFW
@@ -159,7 +162,7 @@ the terms of the GNU General Public License v3.0.
 This program comes with ABSOLUTELY NO WARRANTY.
 ```
 
-Monolit sebelumnya bernama PokeBank. Folder data lama
-`sdmc:/switch/PokeBank` dipindahkan otomatis ke `sdmc:/switch/Monolit` saat
-pertama kali aplikasi dibuka. Nama “Monolit” dipilih secara netral; jika ada
-pemegang merek yang berkeberatan, nama proyek dapat diganti.
+Monolit was previously named PokeBank. The old data folder
+`sdmc:/switch/PokeBank` is automatically moved to `sdmc:/switch/Monolit` the
+first time the application starts. The name “Monolit” was chosen to be neutral;
+if a trademark holder objects, the project name can be changed.
