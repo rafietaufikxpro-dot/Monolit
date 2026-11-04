@@ -11,7 +11,7 @@ It is an **offline, Pokémon HOME–like bank**: it copies/moves Pokémon betwee
 save file and a bank file on the SD card, with no internet and no Nintendo services.
 
 - Version: v0.2.0 (early; **not yet validated on real hardware with real saves**). See `CHANGELOG.md`.
-- UI: SDL2 + SDL2_ttf (1280x720 logical), gamepad only via libnx `pad`; font = Switch system shared font (`plGetSharedFontByType`), no bundled assets. UI strings are Indonesian.
+- UI: SDL2 + SDL2_ttf (1280x720 logical), gamepad only via libnx `pad`; font = Switch system shared font (`plGetSharedFontByType`), no bundled assets. UI strings are English.
 - Code comments / identifiers: English.
 - License: **GPL-3.0** (offsets, block keys, crypto and tables are derived from PKHeX, GPL-3.0).  Files: `LICENSE`, `NOTICE.md`, `RELEASING.md` (releases must ship source).
 
@@ -205,7 +205,7 @@ placeholder author, missing `.bak` recovery. These are covered by host tests whe
 8. Power-loss / failure paths: remove SD mid-way only on a throwaway save.
 9. Test Sword↔Shield and Scarlet↔Violet round trips between two saves.
 10. DLC prompt: deposit from a save with DLC, withdraw into a save without it → warning appears, `[A]` proceeds, any other button cancels.
-11. Bank recovery: copy `monolit.bank` away, delete the main file, relaunch → "dipulihkan dari salinan cadangan" notice and entries intact.
+11. Bank recovery: copy `monolit.bank` away, delete the main file, relaunch → "Bank restored from backup copy" notice and entries intact.
 12. Backups: after 11+ successful writes to one game, only the 10 newest `.bak` files for that title ID remain.
 
 ## 9. Commands & references
@@ -235,5 +235,5 @@ References (source of truth for every constant):
 - Never invent offsets, keys or sizes. Cite the PKHeX file/line you took them from in the PR description.
 - Do not weaken a safety invariant (§5) to make a feature easier. If a change touches `commitSave`, `SaveImage::build`, or `Bank::save`, add a host test.
 - Do not commit save files, ROMs, `prod.keys`, or other copyrighted/private data.
-- Keep UI text Indonesian (current convention) unless the maintainer adds localization.
+- Keep UI text in English (current convention) unless the maintainer adds localization.
 - Be honest in docs: do not claim "tested" or "compatible" for anything not run on real hardware.

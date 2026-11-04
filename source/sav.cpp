@@ -84,7 +84,7 @@ bool walkBlocks(const std::vector<uint8_t>& pl, uint32_t target, Found& f, std::
             if (off + 4 > n) { err = "blok objek terpotong"; return false; }
             int32_t len = (int32_t)(rd32(&pl[off]) ^ xk.next32());
             off += 4;
-            if (len < 0 || off + (size_t)len > n) { err = "panjang blok tidak valid"; return false; }
+            if (len < 0 || off + (size_t)len > n) { err = "invalid block length"; return false; }
             dataOff = off; dataLen = (size_t)len; off += dataLen; bytesOk = true;
         } else if (type == 5) {
             if (off + 5 > n) { err = "blok array terpotong"; return false; }
@@ -92,12 +92,12 @@ bool walkBlocks(const std::vector<uint8_t>& pl, uint32_t target, Found& f, std::
             off += 4;
             int sub = pl[off++] ^ xk.next();
             int sz = typeSize(sub);
-            if (cnt < 0 || sz < 0 || off + (size_t)cnt * sz > n) { err = "array blok tidak valid"; return false; }
+            if (cnt < 0 || sz < 0 || off + (size_t)cnt * sz > n) { err = "invalid block array"; return false; }
             dataOff = off; dataLen = (size_t)cnt * sz; off += dataLen;
             bytesOk = (sub == 8);
         } else {
             int sz = typeSize(type);
-            if (sz < 0 || off + sz > n) { err = "tipe blok tidak dikenal"; return false; }
+            if (sz < 0 || off + sz > n) { err = "unknown block type"; return false; }
             dataOff = off; dataLen = sz; off += sz;
         }
         f.idx.emplace_back(key, dataLen);
@@ -117,26 +117,26 @@ bool SaveImage::load(const GameDef& g, std::vector<uint8_t> file, std::string& e
     game_ = nullptr;
     blocks_.clear();
     const FmtInfo* fi = fmtInfo(g.fmt);
-    if (!fi) { err = "format tidak dikenal"; return false; }
+    if (!fi) { err = "unknown format"; return false; }
     slotSize_ = fi->slotSize;
     size_t boxBytes = (size_t)g.boxes * g.perBox * slotSize_;
     file_ = std::move(file);
 
     if (g.family == FAM_SCBLOCK) {
-        if (file_.size() < 64) { err = "file save terlalu kecil"; return false; }
+        if (file_.size() < 64) { err = "save file too small"; return false; }
         size_t n = file_.size() - 32;
         uint8_t h[32];
         swishHash(file_.data(), n, h);
         if (memcmp(h, file_.data() + n, 32) != 0) {
-            err = "hash save tidak cocok (save rusak / versi game belum didukung)";
+            err = "save hash mismatch (damaged save or unsupported game version)";
             return false;
         }
         payload_.assign(file_.begin(), file_.begin() + n);
         staticXor(payload_.data(), payload_.size());
         Found f;
         if (!walkBlocks(payload_, g.boxKey, f, err)) return false;
-        if (!f.ok) { err = "blok box tidak ditemukan di save"; return false; }
-        if (f.len < boxBytes) { err = "blok box lebih kecil dari yang diharapkan"; return false; }
+        if (!f.ok) { err = "box block not found in save"; return false; }
+        if (f.len < boxBytes) { err = "box block smaller than expected"; return false; }
         dataOff_ = f.off; xsState_ = f.st; xsCounter_ = f.c;
         blocks_ = std::move(f.idx);
         box_.resize(boxBytes);
@@ -145,15 +145,15 @@ bool SaveImage::load(const GameDef& g, std::vector<uint8_t> file, std::string& e
     } else {
         bool okSize = false;
         for (uint32_t s : BDSP_SIZES) if (file_.size() == s) okSize = true;
-        if (!okSize) { err = "ukuran save BD/SP tidak dikenal"; return false; }
+        if (!okSize) { err = "unknown BD/SP save size"; return false; }
         std::vector<uint8_t> tmp = file_;
         uint8_t stored[16];
         memcpy(stored, &tmp[BDSP_HASH_OFF], 16);
         memset(&tmp[BDSP_HASH_OFF], 0, 16);
         uint8_t calc[16];
         md5(tmp.data(), tmp.size(), calc);
-        if (memcmp(stored, calc, 16) != 0) { err = "MD5 save BD/SP tidak cocok (save rusak)"; return false; }
-        if ((size_t)g.boxOffset + boxBytes > file_.size()) { err = "area box di luar file"; return false; }
+        if (memcmp(stored, calc, 16) != 0) { err = "BD/SP save MD5 mismatch (damaged save)"; return false; }
+        if ((size_t)g.boxOffset + boxBytes > file_.size()) { err = "box area outside the file"; return false; }
         box_.assign(file_.begin() + g.boxOffset, file_.begin() + g.boxOffset + boxBytes);
     }
     game_ = &g;
@@ -177,7 +177,7 @@ void SaveImage::clear(int box, int idx) {
 }
 
 bool SaveImage::build(std::vector<uint8_t>& out, std::string& err) const {
-    if (!game_) { err = "save belum dimuat"; return false; }
+    if (!game_) { err = "save not loaded"; return false; }
     if (game_->family == FAM_SCBLOCK) {
         std::vector<uint8_t> pl = payload_;
         XS xs(xsState_, xsCounter_);

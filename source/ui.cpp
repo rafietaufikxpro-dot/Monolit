@@ -175,7 +175,7 @@ void cell(int col, int rowi, bool sel, bool filled, const std::string& name, int
         text(x + cw / 2, y + 50, fit(name, 20, cw - 12), 20, TEXT, 1);
         if (level >= 0) text(x + cw / 2, y + 74, "Lv." + std::to_string(level), 17, DIM, 1);
     } else {
-        text(x + cw / 2, y + 36, "kosong", 18, Col{90, 120, 135, 255}, 1);
+        text(x + cw / 2, y + 36, "empty", 18, Col{90, 120, 135, 255}, 1);
     }
     if (mark) frame(x, y, cw, ch, mark == 1 ? WARN : BAD, 3);
     if (sel) frame(x - 2, y - 2, cw + 4, ch + 4, ACCENT, 3);

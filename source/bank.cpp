@@ -20,7 +20,7 @@ ReadResult readFile(const std::string& path, std::vector<uint8_t>& buf, std::str
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) {
         if (errno == ENOENT) return READ_MISSING;
-        err = "tidak bisa membuka " + path;
+        err = "cannot open " + path;
         return READ_ERROR;
     }
     uint8_t tmp[4096];
@@ -28,24 +28,24 @@ ReadResult readFile(const std::string& path, std::vector<uint8_t>& buf, std::str
     while ((n = fread(tmp, 1, sizeof(tmp), f)) > 0) buf.insert(buf.end(), tmp, tmp + n);
     bool bad = ferror(f) != 0;
     fclose(f);
-    if (bad) { err = "gagal membaca " + path; buf.clear(); return READ_ERROR; }
+    if (bad) { err = "failed to read " + path; buf.clear(); return READ_ERROR; }
     return READ_OK;
 }
 
 bool parse(const std::vector<uint8_t>& buf, std::vector<BankEntry>& out, std::string& err) {
     out.clear();
-    if (buf.size() < 16 || memcmp(buf.data(), "PKBANK01", 8) != 0) { err = "file bank bukan format PKBANK01"; return false; }
+    if (buf.size() < 16 || memcmp(buf.data(), "PKBANK01", 8) != 0) { err = "bank file is not in PKBANK01 format"; return false; }
     uint32_t count = buf[8] | (buf[9] << 8) | (buf[10] << 16) | ((uint32_t)buf[11] << 24);
     size_t off = 16;
     for (uint32_t i = 0; i < count; i++) {
-        if (off + 4 > buf.size()) { err = "file bank terpotong"; out.clear(); return false; }
+        if (off + 4 > buf.size()) { err = "bank file is truncated"; out.clear(); return false; }
         BankEntry e;
         e.fmt = (Fmt)buf[off];
         e.dlc = buf[off + 1];
         uint16_t sz = (uint16_t)(buf[off + 2] | (buf[off + 3] << 8));
         off += 4;
         const FmtInfo* fi = fmtInfo(e.fmt);
-        if (!fi || sz != fi->slotSize || off + sz > buf.size()) { err = "entri bank tidak valid"; out.clear(); return false; }
+        if (!fi || sz != fi->slotSize || off + sz > buf.size()) { err = "invalid bank entry"; out.clear(); return false; }
         e.data.assign(buf.begin() + off, buf.begin() + off + sz);
         off += sz;
         out.push_back(std::move(e));
@@ -80,7 +80,7 @@ bool Bank::load(const std::string& path, std::string& err) {
     std::string parseErr;
     if (!parse(buf, entries, parseErr)) {
         entries.clear();
-        err = (r == READ_MISSING ? std::string("bank hilang dan backup rusak: ") : mainErr + "; backup juga rusak: ") + parseErr;
+        err = (r == READ_MISSING ? std::string("bank missing and backup damaged: ") : mainErr + "; backup also damaged: ") + parseErr;
         return false;
     }
     recovered_ = true;
@@ -103,7 +103,7 @@ bool Bank::save(const std::string& path, std::string& err) const {
     // 1. write the new file next to the real one and read it back before touching anything
     std::string tmp = path + ".tmp";
     FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) { err = "tidak bisa menulis file bank"; return false; }
+    if (!f) { err = "cannot write bank file"; return false; }
     bool ok = fwrite(out.data(), 1, out.size(), f) == out.size();
     ok = (fclose(f) == 0) && ok;
     if (ok) {
@@ -111,24 +111,24 @@ bool Bank::save(const std::string& path, std::string& err) const {
         std::string e2;
         ok = readFile(tmp, back, e2) == READ_OK && back == out;
     }
-    if (!ok) { remove(tmp.c_str()); err = "gagal menulis file bank (SD penuh?)"; return false; }
+    if (!ok) { remove(tmp.c_str()); err = "failed to write bank file (SD card full?)"; return false; }
 
     // 2. swap it in
     std::string bak = path + ".bak";
     if (recovered_) {
         // The main file is missing/invalid and ".bak" is the last good copy: keep ".bak" as it is.
         remove(path.c_str());
-        if (rename(tmp.c_str(), path.c_str()) != 0) { remove(tmp.c_str()); err = "gagal mengganti file bank"; return false; }
+        if (rename(tmp.c_str(), path.c_str()) != 0) { remove(tmp.c_str()); err = "failed to replace bank file"; return false; }
         recovered_ = false;
         return true;
     }
     remove(bak.c_str());  // safe: the new file is already complete on disk
     bool hadMain = rename(path.c_str(), bak.c_str()) == 0;
-    if (!hadMain && errno != ENOENT) { remove(tmp.c_str()); err = "gagal membuat backup bank"; return false; }
+    if (!hadMain && errno != ENOENT) { remove(tmp.c_str()); err = "failed to create bank backup"; return false; }
     if (rename(tmp.c_str(), path.c_str()) != 0) {
         if (hadMain) rename(bak.c_str(), path.c_str());
         remove(tmp.c_str());
-        err = "gagal mengganti file bank";
+        err = "failed to replace bank file";
         return false;
     }
     return true;

@@ -28,7 +28,8 @@ Hardening release. **Not yet tested on real hardware.**
 ## Unreleased
 - Renamed the project from PokeBank to Monolit (trademark caution). Data folder is now `sdmc:/switch/Monolit` and the bank file `monolit.bank`; an existing `sdmc:/switch/PokeBank` folder is moved automatically on first start (nothing is deleted).
 - Cross-game conversion phase 1: PK8 <-> PB8 (`convert.cpp`, generated `conv_data.*`, `tools/gen_convert_tables.py`), shown in the withdraw list as KONVERSI with a confirmation dialog. Verified against PKHeX with a golden test (`tools/GOLDEN.md`).
-- GPL-3.0 header (SPDX) di semua file source; `tools/release.sh` untuk paket rilis berisi source; hak cipta/author: rafietaufik.
+- GPL-3.0 (SPDX) header in all source files; `tools/release.sh` builds a release package that includes the source; copyright/author: rafietaufik.
+- All user-facing text (app UI, error messages, docs) is now English.
 - UI: replaced the libnx text console with an SDL2/SDL2_ttf graphical UI (`source/ui.cpp`): 6x5 box grid, pending-change markers, dialogs, startup warning (ban risk/backup/no affiliation). System font, no bundled assets. Save/commit/bank logic unchanged. **Needs hardware testing** (only syntax-checked against libnx headers; rendering previewed on PC).
 - Makefile: links SDL2/SDL2_ttf via devkitPro pkg-config.
 - Add GPL-3.0 `LICENSE`, `NOTICE.md` (PKHeX attribution), `RELEASING.md`; README: ToS/ban risk and trademark notes; CONTRIBUTING: no-affiliation disclaimer and asset rules.

@@ -27,7 +27,7 @@ enum Result {
     BAD_DATA,
 };
 
-const char* describe(Result r);  // short Indonesian message for the UI
+const char* describe(Result r);  // short English message for the UI
 
 // True when conversion between the two formats is implemented.
 bool supported(Fmt from, Fmt to);

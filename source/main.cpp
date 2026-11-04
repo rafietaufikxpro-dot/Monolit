@@ -173,12 +173,12 @@ static bool screenPickUser(bool allowCancel) {
     int n = (int)g_users.size();
     auto draw = [&] {
         ui::begin();
-        ui::topBar("Pilih user", "Save dibaca per user Switch");
+        ui::topBar("Select user", "Saves are read per Switch user");
         if (cur < top) top = cur;
         if (cur >= top + ui::LIST_ROWS) top = cur - ui::LIST_ROWS + 1;
         for (int i = top; i < n && i < top + ui::LIST_ROWS; i++) ui::row(i - top, i == cur, std::to_string(i + 1) + "   " + names[i], "");
-        std::vector<ui::Hint> h{{"A", "Pakai user ini"}};
-        if (allowCancel) h.push_back({"B", "Batal"});
+        std::vector<ui::Hint> h{{"A", "Use this user"}};
+        if (allowCancel) h.push_back({"B", "Cancel"});
         ui::footBar(h);
     };
     while (appletMainLoop()) {
@@ -222,14 +222,14 @@ static void screenBank() {
             ui::row(i - top, i == cur, std::to_string(i + 1) + "   " + describe(e.fmt, e.data.data()),
                     std::string(fi ? fi->name : "?") + dlcTag(e.fmt, bankDlcNeeded(e)));
         }
-        if (n == 0) ui::text(ui::W / 2, 300, "Bank kosong", 28, ui::DIM, 1);
-        ui::footBar({{"Atas/Bawah", "Pilih"}, {"Kiri/Kanan", "±10"}, {"X", "Hapus dari bank"}, {"B", "Kembali"}});
+        if (n == 0) ui::text(ui::W / 2, 300, "Bank is empty", 28, ui::DIM, 1);
+        ui::footBar({{"Up/Down", "Select"}, {"Left/Right", "±10"}, {"X", "Delete from bank"}, {"B", "Back"}});
         ui::toast(msg);
     };
     while (appletMainLoop()) {
         u64 k;
         if (confirmDel) {
-            k = waitKey([&] { base(); ui::dialog("Hapus permanen?", "Entri ini akan dihapus PERMANEN dari bank dan tidak bisa dikembalikan.", {{"X", "Hapus"}, {"B", "Batal"}}, ui::BAD); });
+            k = waitKey([&] { base(); ui::dialog("Delete permanently?", "This entry will be deleted PERMANENTLY from the bank and cannot be recovered.", {{"X", "Delete"}, {"B", "Cancel"}}, ui::BAD); });
         } else {
             k = waitKey(base);
         }
@@ -239,7 +239,7 @@ static void screenBank() {
             if ((k & HidNpadButton_X) && n > 0) {
                 g_bank.entries.erase(g_bank.entries.begin() + cur);
                 std::string err;
-                msg = g_bank.save(BANK_FILE, err) ? "Entri dihapus." : ("GAGAL simpan bank: " + err);
+                msg = g_bank.save(BANK_FILE, err) ? "Entry deleted." : ("FAILED to save bank: " + err);
                 if (cur >= (int)g_bank.entries.size() && cur > 0) cur--;
             }
             continue;
@@ -280,7 +280,7 @@ static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int have
     int n = (int)rows.size();
     auto draw = [&] {
         ui::begin();
-        ui::topBar("Ambil dari bank", std::to_string(n) + " bisa dipakai di game ini");
+        ui::topBar("Take from bank", std::to_string(n) + " usable in this game");
         if (cur < top) top = cur;
         if (cur >= top + ui::LIST_ROWS) top = cur - ui::LIST_ROWS + 1;
         for (int i = top; i < n && i < top + ui::LIST_ROWS; i++) {
@@ -289,16 +289,16 @@ static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int have
             ui::Col col = ui::WARN;
             if (be.fmt != fmt) {
                 const FmtInfo* sf = fmtInfo(be.fmt);
-                if (rows[i].res == conv::OK) right = std::string("KONVERSI dari ") + (sf ? sf->name : "?");
-                else { right = "TIDAK BISA: " + std::string(conv::describe(rows[i].res)); col = ui::BAD; }
+                if (rows[i].res == conv::OK) right = std::string("CONVERT from ") + (sf ? sf->name : "?");
+                else { right = "CANNOT: " + std::string(conv::describe(rows[i].res)); col = ui::BAD; }
             } else if (bankDlcNeeded(be) > haveDlc) {
-                right = std::string("BUTUH ") + dlcName(fmt, bankDlcNeeded(be));
+                right = std::string("NEEDS ") + dlcName(fmt, bankDlcNeeded(be));
             }
             ui::row(i - top, i == cur, std::to_string(i + 1) + "   " + describe(be.fmt, be.data.data()), right, col);
         }
-        if (n == 0) ui::text(ui::W / 2, 300, "Tidak ada Pokémon di bank yang cocok untuk game ini", 26, ui::DIM, 1);
-        else ui::text(40, ui::H - 90, "KONVERSI = simulasi HOME offline: move di-reset ke learnset game tujuan; hanya untuk dipakai offline.", 18, ui::DIM);
-        ui::footBar({{"Atas/Bawah", "Pilih"}, {"A", "Ambil"}, {"B", "Batal"}});
+        if (n == 0) ui::text(ui::W / 2, 300, "No Pokémon in the bank fit this game", 26, ui::DIM, 1);
+        else ui::text(40, ui::H - 90, "CONVERT = offline HOME simulation: moves are reset to the destination game's learnset; for offline use only.", 18, ui::DIM);
+        ui::footBar({{"Up/Down", "Select"}, {"A", "Take"}, {"B", "Cancel"}});
     };
     while (appletMainLoop()) {
         u64 k = waitKey(draw);
@@ -309,14 +309,14 @@ static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int have
             pr.index = rows[cur].bank;
             pr.from = be.fmt;
             if (be.fmt == fmt) { pr.data = be.data; return pr; }
-            if (rows[cur].res != conv::OK) { notice(draw, "Tidak bisa dikonversi", conv::describe(rows[cur].res), true); continue; }
+            if (rows[cur].res != conv::OK) { notice(draw, "Cannot convert", conv::describe(rows[cur].res), true); continue; }
             const FmtInfo* sf = fmtInfo(be.fmt);
             const FmtInfo* df = fmtInfo(fmt);
-            std::string body = std::string("Dari ") + (sf ? sf->name : "?") + " ke " + (df ? df->name : "?") + ".\n"
-                "Move di-reset ke yang diberikan game tujuan pada level ini, ability/ball/lokasi disesuaikan, held item dihapus. Move asli tidak bisa dikembalikan setelah ditulis.\n"
-                "Hasil konversi tidak punya tracker HOME yang sah: pakai HANYA offline (jangan ke HOME asli, trade, atau battle online).";
-            if (fmt == FMT_PK8) body += "\nJika Pokémon ini hanya ada di DLC Sword/Shield, pastikan save tujuan punya DLC-nya.";
-            if (!confirmA(draw, "Konversi antar game", body, "Lanjut konversi", "Batal", true)) continue;
+            std::string body = std::string("From ") + (sf ? sf->name : "?") + " to " + (df ? df->name : "?") + ".\n"
+                "Moves are reset to what the destination game gives at this level, ability/ball/location are adjusted and the held item is removed. The original moves cannot be recovered once written.\n"
+                "The result has no valid HOME tracker: use it OFFLINE ONLY (not with real HOME, trades or online battles).";
+            if (fmt == FMT_PK8) body += "\nIf this Pokémon only exists in the Sword/Shield DLC, make sure the destination save has that DLC.";
+            if (!confirmA(draw, "Cross-game conversion", body, "Convert", "Cancel", true)) continue;
             pr.data = rows[cur].data;
             pr.converted = true;
             return pr;
@@ -337,27 +337,27 @@ static bool commitSave(const GameDef& g, SaveImage& img, std::vector<uint8_t>& o
     // 1. verify what we are about to write is itself a valid save
     {
         SaveImage check;
-        if (!check.load(g, out, err)) { err = "verifikasi sebelum tulis gagal: " + err; return false; }
+        if (!check.load(g, out, err)) { err = "pre-write verification failed: " + err; return false; }
     }
 
     // 2. backup original save to SD (never skipped)
     char name[160];
     snprintf(name, sizeof(name), "%s/%s_%lld_%s.bak", DIR_BACKUP, hex64(g.titleId).c_str(), (long long)time(NULL), g.saveFile);
     FILE* bf = fopen(name, "wb");
-    if (!bf) { err = "tidak bisa membuat backup, penulisan dibatalkan"; return false; }
+    if (!bf) { err = "could not create the backup, write cancelled"; return false; }
     bool bok = fwrite(orig.data(), 1, orig.size(), bf) == orig.size();
     bok = (fclose(bf) == 0) && bok;
-    if (!bok) { err = "backup gagal ditulis, penulisan dibatalkan"; return false; }
+    if (!bok) { err = "backup could not be written, write cancelled"; return false; }
 
     // 3. write + commit
     std::string path = std::string("save:/") + g.saveFile;
     FILE* f = fopen(path.c_str(), "r+b");
-    if (!f) { err = "tidak bisa membuka file save untuk ditulis"; return false; }
+    if (!f) { err = "could not open the save file for writing"; return false; }
     bool wok = fwrite(out.data(), 1, out.size(), f) == out.size();
     wok = (fflush(f) == 0) && wok;
     wok = (fclose(f) == 0) && wok;
     if (!wok || R_FAILED(fsdevCommitDevice("save"))) {
-        err = "penulisan/commit gagal";
+        err = "write/commit failed";
         return false;
     }
 
@@ -367,7 +367,7 @@ static bool commitSave(const GameDef& g, SaveImage& img, std::vector<uint8_t>& o
         // try to restore the original
         FILE* rf = fopen(path.c_str(), "r+b");
         if (rf) { fwrite(orig.data(), 1, orig.size(), rf); fclose(rf); fsdevCommitDevice("save"); }
-        err = "verifikasi setelah tulis gagal, save asli dipulihkan dari backup";
+        err = "post-write verification failed, original save restored from backup";
         return false;
     }
     orig = out;
@@ -376,13 +376,13 @@ static bool commitSave(const GameDef& g, SaveImage& img, std::vector<uint8_t>& o
 
 // ---------------------------------------------------------------- save / box view
 static void screenSave(const GameDef& g) {
-    if (!mountSave(g.titleId)) { notice(NO_BASE, "Gagal mount save", "Save game tidak bisa dibuka. Pastikan game ditutup penuh (tidak suspended).", true); return; }
+    if (!mountSave(g.titleId)) { notice(NO_BASE, "Failed to mount save", "The save could not be opened. Make sure the game is fully closed (not suspended).", true); return; }
     std::vector<uint8_t> orig;
     std::string path = std::string("save:/") + g.saveFile, err;
     SaveImage img;
     if (!readAll(path, orig) || !img.load(g, orig, err)) {
         unmountSave();
-        notice(NO_BASE, std::string("Tidak bisa memuat save ") + g.name, err + "\nSave TIDAK diubah.", true);
+        notice(NO_BASE, std::string("Cannot load save of ") + g.name, err + "\nThe save was NOT modified.", true);
         return;
     }
     const FmtInfo* fi = fmtInfo(g.fmt);
@@ -396,15 +396,15 @@ static void screenSave(const GameDef& g) {
     auto base = [&] {
         ui::begin();
         ui::topBar(std::string(g.name) + "  -  Box " + std::to_string(box + 1) + "/" + std::to_string(img.boxes()),
-                   dirty ? "(!) perubahan belum ditulis" : "Bank: " + std::to_string(g_bank.entries.size()) + " Pokémon  ·  " + fi->name,
+                   dirty ? "(!) unsaved changes" : "Bank: " + std::to_string(g_bank.entries.size()) + " Pokémon  ·  " + fi->name,
                    dirty ? ui::WARN : ui::DIM);
         for (int i = 0; i < img.perBox(); i++) {
             PkSummary s = pkSummarize(g.fmt, img.slot(box, i));
             ui::cell(i % COLS, i / COLS, i == cur, s.present, s.name, s.level, mark[(size_t)box * img.perBox() + i]);
         }
         PkSummary c = pkSummarize(g.fmt, img.slot(box, cur));
-        if (msg.empty()) ui::text(62, ui::H - 96, "Slot " + std::to_string(cur + 1) + ":  " + (c.present ? describe(g.fmt, img.slot(box, cur)) : std::string("kosong")), 22, ui::TEXT);
-        ui::footBar({{"A", "Salin"}, {"X", "Pindah"}, {"Y", "Ambil"}, {"L/R", "Box"}, {"+", "TULIS ke save"}, {"B", "Kembali"}});
+        if (msg.empty()) ui::text(62, ui::H - 96, "Slot " + std::to_string(cur + 1) + ":  " + (c.present ? describe(g.fmt, img.slot(box, cur)) : std::string("empty")), 22, ui::TEXT);
+        ui::footBar({{"A", "Copy"}, {"X", "Move"}, {"Y", "Take"}, {"L/R", "Box"}, {"+", "WRITE to save"}, {"B", "Back"}});
         ui::toast(msg);
     };
 
@@ -420,7 +420,7 @@ static void screenSave(const GameDef& g) {
         size_t mi = (size_t)box * img.perBox() + cur;
 
         if (k & (HidNpadButton_A | HidNpadButton_X)) {
-            if (!img.present(box, cur)) { msg = "Slot kosong."; continue; }
+            if (!img.present(box, cur)) { msg = "Slot is empty."; continue; }
             BankEntry e;
             e.fmt = g.fmt;
             e.dlc = (uint8_t)(1 + img.dlcLevel());
@@ -428,7 +428,7 @@ static void screenSave(const GameDef& g) {
             g_bank.entries.push_back(e);
             if (!g_bank.save(BANK_FILE, err)) {
                 g_bank.entries.pop_back();
-                msg = "GAGAL menyimpan bank: " + err;
+                msg = "FAILED to save bank: " + err;
                 continue;
             }
             taken.push_back(false);
@@ -436,33 +436,33 @@ static void screenSave(const GameDef& g) {
                 img.clear(box, cur);
                 mark[mi] = 2;
                 dirty = true;
-                msg = "Dipindah ke bank. Tekan + untuk menulis ke save.";
+                msg = "Moved to bank. Press + to write to the save.";
             } else {
-                msg = "Disalin ke bank (save tidak berubah).";
+                msg = "Copied to bank (save unchanged).";
             }
         } else if (k & HidNpadButton_Y) {
-            if (img.present(box, cur)) { msg = "Slot harus kosong untuk mengambil dari bank."; continue; }
+            if (img.present(box, cur)) { msg = "The slot must be empty to take from the bank."; continue; }
             PickResult pk = pickFromBank(g.fmt, taken, img.dlcLevel());
             int pick = pk.index;
             bool go = pick >= 0;
             if (go && !pk.converted && bankDlcNeeded(g_bank.entries[pick]) > img.dlcLevel()) {
-                std::string body = std::string("Pokémon ini disimpan dari save yang memiliki \"") + dlcName(g.fmt, bankDlcNeeded(g_bank.entries[pick])) +
-                    "\", sedangkan save ini belum memilikinya.\nJika Pokémon ini memakai konten DLC (spesies, move, ribbon, dsb), memasukkannya bisa membuat game crash atau save bermasalah.";
-                if (!confirmA(base, "Peringatan DLC", body, "Tetap masukkan", "Batal", true)) { go = false; msg = "Dibatalkan."; }
+                std::string body = std::string("This Pokémon was stored from a save that has \"") + dlcName(g.fmt, bankDlcNeeded(g_bank.entries[pick])) +
+                    "\", but this save does not.\nIf this Pokémon uses DLC content (species, moves, ribbons, etc.), adding it can crash the game or corrupt the save.";
+                if (!confirmA(base, "DLC warning", body, "Add anyway", "Cancel", true)) { go = false; msg = "Cancelled."; }
             }
             if (go) {
                 if (img.put(box, cur, pk.data.data(), pk.data.size())) {
                     taken[pick] = true;
                     mark[mi] = 1;
                     dirty = true;
-                    msg = pk.converted ? "Dikonversi dan dimasukkan ke slot. Tekan + untuk menulis ke save." : "Dimasukkan ke slot. Tekan + untuk menulis ke save.";
+                    msg = pk.converted ? "Converted and placed in the slot. Press + to write to the save." : "Placed in the slot. Press + to write to the save.";
                 } else {
-                    msg = "Gagal memasukkan (ukuran tidak cocok).";
+                    msg = "Could not place it (size mismatch).";
                 }
             }
         } else if (k & HidNpadButton_Plus) {
-            if (!dirty) { msg = "Tidak ada perubahan."; continue; }
-            busy(base, "Menulis ke save...", "Jangan matikan konsol.");
+            if (!dirty) { msg = "No changes."; continue; }
+            busy(base, "Writing to save...", "Do not turn off the console.");
             if (commitSave(g, img, orig, err)) {
                 // only now drop withdrawn entries from the bank
                 std::vector<BankEntry> keep;
@@ -478,14 +478,14 @@ static void screenSave(const GameDef& g) {
                 dirty = false;
                 std::fill(mark.begin(), mark.end(), 0);
                 pruneBackups(g.titleId, KEEP_BACKUPS);
-                msg = bs ? "BERHASIL ditulis. Backup tersimpan di sdmc:/switch/Monolit/backups"
-                         : "Save ditulis, tapi bank gagal diperbarui (Pokémon mungkin terduplikasi di bank).";
+                msg = bs ? "Written successfully. Backup saved in sdmc:/switch/Monolit/backups"
+                         : "Save written, but the bank could not be updated (the Pokémon may be duplicated in the bank).";
             } else {
-                msg = "GAGAL: " + err;
+                msg = "FAILED: " + err;
             }
         } else if (k & HidNpadButton_B) {
             if (dirty) {
-                if (confirmA(base, "Buang perubahan?", "Ada perubahan yang belum ditulis ke save.", "Buang perubahan", "Tetap di sini", true)) break;
+                if (confirmA(base, "Discard changes?", "There are changes that have not been written to the save.", "Discard", "Stay here", true)) break;
                 continue;
             }
             break;
@@ -496,9 +496,9 @@ static void screenSave(const GameDef& g) {
 
 // ---------------------------------------------------------------- main menu
 static const char* TOS_WARNING =
-    "Menjalankan CFW dan homebrew melanggar syarat layanan Nintendo. Ada risiko ban online (konsol diblokir dari layanan online). Risiko ditanggung pengguna.\n"
-    "Aplikasi ini menulis langsung ke save game. Backup dulu dengan Checkpoint.\n"
-    "Monolit adalah proyek penggemar gratis (GPL-3.0), tidak berafiliasi dengan Nintendo, The Pokémon Company, atau GAME FREAK. Tanpa jaminan.";
+    "Running CFW and homebrew violates Nintendo's terms of service. There is a risk of an online ban (console blocked from online services). You use this at your own risk.\n"
+    "This app writes directly to your save files. Back up first with Checkpoint.\n"
+    "Monolit is a free fan project (GPL-3.0), not affiliated with Nintendo, The Pokémon Company or GAME FREAK. No warranty.";
 
 int main(int argc, char** argv) {
     (void)argc; (void)argv;
@@ -512,7 +512,7 @@ int main(int argc, char** argv) {
                 ui::init(font.address, font.size);
     if (!uiOk) {
         consoleInit(NULL);
-        printf("Gagal memulai UI grafis (SDL2/font sistem).\nTekan + untuk keluar.\n");
+        printf("Failed to start the graphical UI (SDL2/system font).\nPress + to exit.\n");
         while (appletMainLoop()) {
             padUpdate(&g_pad);
             if (padGetButtonsDown(&g_pad) & HidNpadButton_Plus) break;
@@ -529,23 +529,23 @@ int main(int argc, char** argv) {
     };
 
     if (g_migrationFailed)
-        notice(NO_BASE, "Data lama tidak bisa dipindah",
-               "Folder lama sdmc:/switch/PokeBank gagal dipindah ke sdmc:/switch/Monolit. Data lama TIDAK dihapus. Pindahkan folder itu secara manual lewat komputer atau file manager, lalu ganti nama pokebank.bank menjadi monolit.bank.", true);
+        notice(NO_BASE, "Old data could not be moved",
+               "The old folder sdmc:/switch/PokeBank could not be moved to sdmc:/switch/Monolit. The old data was NOT deleted. Move the folder manually with a computer or file manager, then rename pokebank.bank to monolit.bank.", true);
 
     // Warning shown on every start: ban risk, backup, no affiliation.
-    if (!confirmA(NO_BASE, "Peringatan sebelum memakai", TOS_WARNING, "Saya mengerti", "Keluar", true)) return quit(0);
+    if (!confirmA(NO_BASE, "Warning before use", TOS_WARNING, "I understand", "Exit", true)) return quit(0);
 
     std::string err;
     if (!g_bank.load(BANK_FILE, err)) {
-        notice(NO_BASE, "Bank tidak bisa dimuat",
-               err + "\nFile TIDAK diubah dan TIDAK dianggap kosong. Periksa SD card, atau pindahkan/perbaiki dulu:\n" + BANK_FILE + "\n(salinan cadangan: " + BANK_FILE + ".bak)", true);
+        notice(NO_BASE, "The bank could not be loaded",
+               err + "\nThe file was NOT modified and was NOT treated as empty. Check the SD card, or move/repair it first:\n" + BANK_FILE + "\n(backup copy: " + BANK_FILE + ".bak)", true);
         return quit(1);
     }
 
     if (g_bank.recoveredFromBackup()) {
-        notice(NO_BASE, "Bank dipulihkan dari salinan cadangan",
-               "File bank utama hilang atau rusak. Bank dipulihkan dari " + std::string(BANK_FILE) + ".bak (" + std::to_string(g_bank.entries.size()) +
-               " Pokémon).\nPenyimpanan berikutnya akan membuat file utama baru; cadangan tetap aman.");
+        notice(NO_BASE, "Bank restored from backup copy",
+               "The main bank file is missing or damaged. The bank was restored from " + std::string(BANK_FILE) + ".bak (" + std::to_string(g_bank.entries.size()) +
+               " Pokémon).\nThe next save will create a new main file; the backup copy stays intact.");
     }
 
     // Which Switch user's saves to use: the preselected user (title override) if any; otherwise the only
@@ -571,7 +571,7 @@ int main(int argc, char** argv) {
     std::vector<bool> avail(ng, false);
     auto scan = [&]() {
         avail.assign(ng, false);
-        busy(NO_BASE, "Memeriksa save game...", "");
+        busy(NO_BASE, "Checking save games...", "");
         if (!accountUidIsValid(&g_uid)) return;
         for (size_t i = 0; i < ng; i++) {
             if (mountSave(games[i].titleId)) {
@@ -588,14 +588,14 @@ int main(int argc, char** argv) {
     int cur = 0;
     auto draw = [&] {
         ui::begin();
-        ui::topBar(std::string("Monolit v") + APP_VERSION, accountUidIsValid(&g_uid) ? "User: " + uname : "Tidak ada user terdeteksi", accountUidIsValid(&g_uid) ? ui::DIM : ui::WARN);
+        ui::topBar(std::string("Monolit v") + APP_VERSION, accountUidIsValid(&g_uid) ? "User: " + uname : "No user detected", accountUidIsValid(&g_uid) ? ui::DIM : ui::WARN);
         for (size_t i = 0; i < ng; i++) {
             const FmtInfo* fi = fmtInfo(games[i].fmt);
-            ui::row((int)i, (int)i == cur, games[i].name, avail[i] ? std::string(fi ? fi->name : "") : "save tidak ditemukan", avail[i] ? ui::DIM : ui::WARN);
+            ui::row((int)i, (int)i == cur, games[i].name, avail[i] ? std::string(fi ? fi->name : "") : "save not found", avail[i] ? ui::DIM : ui::WARN);
         }
         ui::text(40, ui::H - 140, "Bank: " + std::to_string(g_bank.entries.size()) + " Pokémon   ·   " + BANK_FILE, 20, ui::DIM);
-        ui::text(40, ui::H - 110, "SELALU backup save dengan Checkpoint sebelum menulis.   Proyek penggemar, GPL-3.0, tidak berafiliasi dengan Nintendo / The Pokémon Company.", 17, ui::DIM);
-        ui::footBar({{"A", "Buka save"}, {"Y", "Lihat bank"}, {"X", "Ganti user"}, {"+", "Keluar"}});
+        ui::text(40, ui::H - 110, "ALWAYS back up your saves with Checkpoint before writing.   Fan project, GPL-3.0, not affiliated with Nintendo / The Pokémon Company.", 17, ui::DIM);
+        ui::footBar({{"A", "Open save"}, {"Y", "View bank"}, {"X", "Switch user"}, {"+", "Exit"}});
     };
     while (appletMainLoop()) {
         u64 k = waitKey(draw);

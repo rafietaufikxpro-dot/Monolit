@@ -1,52 +1,49 @@
-# Berkontribusi ke Monolit
+# Contributing to Monolit
 
-Terima kasih sudah tertarik membantu! Monolit adalah homebrew `.nro` untuk Switch CFW (Atmosphère)
-yang berfungsi seperti bank Pokémon offline. Karena aplikasi ini **menulis langsung ke file save game**,
-standar keamanannya lebih ketat daripada proyek biasa. Mohon baca dokumen ini sebelum membuka PR.
+Thanks for your interest in helping! Monolit is a `.nro` homebrew for Switch CFW (Atmosphère) that works as an offline
+Pokémon bank. Because it **writes directly to real game save files**, its safety standard is stricter than usual.
+Please read this document before opening a PR.
 
-> **English summary:** Monolit writes to real save files, so safety comes first. Fork → branch → make a small change →
-> run `make -f Makefile.host test` → open a PR with a clear description. Every offset/key must cite a PKHeX source.
-> Never attach saves, ROMs, or keys. Bug reports and PRs may be written in Indonesian or English.
+## Contents
+- [Core principles](#core-principles)
+- [How to help](#how-to-help)
+- [Setting up](#setting-up)
+- [Build and test](#build-and-test)
+- [Code layout](#code-layout)
+- [Contribution flow](#contribution-flow)
+- [Pull request checklist](#pull-request-checklist)
+- [Adding a game or format](#adding-a-game-or-format)
+- [Reporting bugs](#reporting-bugs)
+- [Code and commit style](#code-and-commit-style)
+- [AI-assisted contributions](#ai-assisted-contributions)
+- [License](#license)
+- [Disclaimer and trademark rules](#disclaimer-and-trademark-rules)
 
-## Daftar isi
-- [Prinsip utama](#prinsip-utama)
-- [Cara membantu](#cara-membantu)
-- [Menyiapkan lingkungan](#menyiapkan-lingkungan)
-- [Build dan tes](#build-dan-tes)
-- [Struktur kode](#struktur-kode)
-- [Alur kontribusi](#alur-kontribusi)
-- [Checklist Pull Request](#checklist-pull-request)
-- [Menambah game atau format baru](#menambah-game-atau-format-baru)
-- [Melaporkan bug](#melaporkan-bug)
-- [Gaya kode dan commit](#gaya-kode-dan-commit)
-- [Kontribusi dengan bantuan AI](#kontribusi-dengan-bantuan-ai)
-- [Lisensi](#lisensi)
+## Core principles
 
-## Prinsip utama
+1. **Never damage a user's save.** Do not weaken the existing protections: changes stay in memory until the user presses **+**,
+   hashes/checksums are verified, a backup is always created before writing, the written result is read back and compared, and
+   new bank entries are removed only after the save was written successfully.
+2. **Do not guess data.** Every offset, block key, size and table must be traceable to [PKHeX](https://github.com/kwsch/PKHeX).
+   Name the source file in the PR description.
+3. **Be honest about test status.** Never write "tested" or "compatible" for something that has not run on a real console.
+4. **Keep the core portable.** Files other than `source/main.cpp` and `source/ui.cpp` must not include libnx/SDL, so the PC tests keep working.
 
-1. **Save pengguna tidak boleh rusak.** Jangan melemahkan perlindungan yang sudah ada:
-   perubahan hanya di memori sampai pengguna menekan **+**, hash/checksum diverifikasi, backup selalu dibuat
-   sebelum menulis, hasil tulisan dibaca ulang dan dibandingkan, dan entri bank baru dihapus hanya setelah save berhasil ditulis.
-2. **Jangan menebak data.** Setiap offset, key blok, ukuran, dan tabel harus bisa ditelusuri ke sumber
-   [PKHeX](https://github.com/kwsch/PKHeX). Sebutkan file sumbernya di deskripsi PR.
-3. **Jujur soal status pengujian.** Jangan menulis "sudah dites" atau "kompatibel" untuk sesuatu yang belum dijalankan di konsol asli.
-4. **Inti tetap portabel.** Semua file selain `source/main.cpp` dan `source/ui.cpp` tidak boleh meng-include libnx/SDL agar tes di PC tetap berjalan.
+## How to help
 
-## Cara membantu
+- **Test on a real console** (most needed): run the test checklist in `AI_CONTEXT.md` §8 and report the results.
+- Fix open issues (see `AI_CONTEXT.md` §7), for example more accurate DLC checks (legality), party/daycare support,
+  duplicate markers, and a configurable backup count. The v0.2 features (user picker, DLC warning, bank recovery from `.bak`,
+  backup pruning, cross-game conversion) still need testing on a real console.
+- Add automated tests, especially with real save fixtures that you obtained yourself and share safely.
+- Translations, documentation, app icon.
 
-- **Tes di konsol asli** (paling dibutuhkan): jalankan checklist pengujian di `AI_CONTEXT.md` §8 dan laporkan hasilnya.
-- Memperbaiki masalah yang masih terbuka (lihat `AI_CONTEXT.md` §7), misalnya: pengecekan DLC yang lebih akurat (legalitas),
-  dukungan party/daycare, penanda duplikat, dan pengaturan jumlah backup. Fitur v0.2 (pemilih user, peringatan DLC,
-  pemulihan bank dari `.bak`, pembersihan backup) masih perlu diuji di konsol asli.
-- Menambah tes otomatis, terutama dengan fixture save asli yang kamu peroleh sendiri dan dibagikan secara aman.
-- Terjemahan, dokumentasi, ikon aplikasi.
+## Setting up
 
-## Menyiapkan lingkungan
-
-Yang dibutuhkan:
-- [devkitPro](https://devkitpro.org/wiki/Getting_Started) dengan paket `switch-dev` (devkitA64 + libnx), `switch-sdl2`, `switch-sdl2_ttf`, `switch-pkg-config` untuk build `.nro`
-- `g++` (C++17) dan `make` untuk tes di PC
-- Konsol Switch dengan Atmosphère untuk pengujian nyata, plus [Checkpoint](https://github.com/FlagBrew/Checkpoint) untuk backup save
+You need:
+- [devkitPro](https://devkitpro.org/wiki/Getting_Started) with the packages `switch-dev` (devkitA64 + libnx), `switch-sdl2`, `switch-sdl2_ttf`, `switch-pkg-config` to build the `.nro`
+- `g++` (C++17) and `make` for the PC tests
+- A Switch with Atmosphère for real testing, plus [Checkpoint](https://github.com/FlagBrew/Checkpoint) to back up saves
 
 ```bash
 git clone https://github.com/<username>/Monolit.git
@@ -54,130 +51,136 @@ cd Monolit
 export DEVKITPRO=/opt/devkitpro
 ```
 
-## Build dan tes
+## Build and test
 
 ```bash
-# Tes inti di PC (wajib hijau sebelum PR)
+# Core tests on PC (must be green before a PR)
 make -f Makefile.host test
 
-# Build .nro untuk Switch
+# Build the .nro for Switch
 make
-# hasil: Monolit.nro  -> salin ke sdmc:/switch/
+# output: Monolit.nro  -> copy to sdmc:/switch/
 ```
 
-Hasil build (`build/`, `*.elf`, `*.nro`, `*.nacp`) adalah artefak dan sudah ada di `.gitignore` (begitu juga `*.bank` dan
-`*.bak`, supaya bank/backup pribadi tidak ikut ter-commit). Setelah mengubah versi/author jalankan `make clean && make`.
+Build output (`build/`, `*.elf`, `*.nro`, `*.nacp`) is an artifact and is in `.gitignore` (so are `*.bank` and `*.bak`, so
+personal banks/backups are never committed). After changing the version/author run `make clean && make`.
 
-Tanpa devkitPro, kamu masih bisa memeriksa sintaks `main.cpp` terhadap header libnx dengan cross-compiler `aarch64-linux-gnu-g++`
-(`-fsyntax-only -D__SWITCH__ -I<libnx>/nx/include`), tetapi itu **bukan** pengganti build penuh.
+Without devkitPro you can still syntax-check `main.cpp` against the libnx headers (`-fsyntax-only -D__SWITCH__ -I<libnx>/nx/include`),
+but that is **not** a replacement for a full build.
 
-## Struktur kode
+## Code layout
 
-| File | Peran |
+| File | Role |
 |---|---|
-| `source/main.cpp` | Alur layar + mount/commit save (khusus Switch, libnx) |
-| `source/ui.cpp/.h` | Menggambar UI (SDL2 + SDL2_ttf, khusus Switch; tanpa libnx, tanpa aset gambar/font) |
-| `source/sav.cpp/.h` | Muat, verifikasi, ubah, dan bangun ulang file save (portabel) |
-| `source/pk.cpp/.h` | Ringkasan Pokémon hanya-baca (portabel) |
-| `source/bank.cpp/.h` | Format file bank `PKBANK01` (portabel) |
-| `source/hash.cpp/.h` | SHA-256 dan MD5 (portabel) |
-| `source/games.h` | Tabel game: title ID, nama file save, key blok, offset |
-| `source/swish_consts.h`, `source/tables.cpp` | Data hasil generate dari PKHeX. **Jangan diedit manual.** |
-| `test/test_core.cpp` | Tes unit di PC |
+| `source/main.cpp` | Screen flow + save mount/commit (Switch only, libnx) |
+| `source/ui.cpp/.h` | UI drawing (SDL2 + SDL2_ttf, Switch only; no libnx, no image/font assets) |
+| `source/sav.cpp/.h` | Load, verify, modify and rebuild save files (portable) |
+| `source/pk.cpp/.h` | Read-only Pokémon summary and Gen 8 slot crypto (portable) |
+| `source/convert.cpp/.h` | Cross-game conversion, PK8 <-> PB8 (portable) |
+| `source/conv_data.*` | Conversion tables generated from PKHeX by `tools/gen_convert_tables.py`. **Do not edit by hand.** |
+| `source/bank.cpp/.h` | `PKBANK01` bank file format (portable) |
+| `source/hash.cpp/.h` | SHA-256 and MD5 (portable) |
+| `source/games.h` | Game table: title ID, save file name, block keys, offsets |
+| `source/swish_consts.h`, `source/tables.cpp` | Data generated from PKHeX. **Do not edit by hand.** |
+| `test/test_core.cpp`, `test/test_convert.cpp` | PC unit tests |
+| `test/golden_dump.cpp`, `tools/golden_compare.py`, `tools/golden/` | Golden test against PKHeX (see `tools/GOLDEN.md`) |
 
-Penjelasan format biner dan alur data lengkap ada di [`AI_CONTEXT.md`](AI_CONTEXT.md).
+The full binary-format description and data flow are in [`AI_CONTEXT.md`](AI_CONTEXT.md).
 
-## Alur kontribusi
+## Contribution flow
 
-1. Fork repo dan buat branch dari `main`: `git checkout -b fix/bank-recover-bak`
-2. Buat perubahan yang **kecil dan fokus** (satu masalah per PR).
-3. Jalankan `make -f Makefile.host test` sebelum dan sesudah perubahan.
-4. Jika menyentuh `commitSave`, `SaveImage::build`, atau `Bank::save`, **wajib** menambah/menyesuaikan tes.
-5. Commit dengan pesan jelas, push, lalu buka Pull Request.
-6. Tanggapi review. PR yang menyentuh jalur tulis save akan di-review lebih teliti.
+1. Fork the repo and branch from `main`: `git checkout -b fix/bank-recover-bak`
+2. Make a **small, focused** change (one problem per PR).
+3. Run `make -f Makefile.host test` before and after the change.
+4. If you touch `commitSave`, `SaveImage::build` or `Bank::save`, you **must** add/adjust tests.
+5. Commit with a clear message, push, and open a Pull Request.
+6. Respond to review. PRs that touch the save-write path get a closer review.
 
-## Checklist Pull Request
+## Pull request checklist
 
-Salin ke deskripsi PR:
+Copy into the PR description:
 
 ```markdown
-## Ringkasan
-<apa yang berubah dan kenapa>
+## Summary
+<what changed and why>
 
-## Sumber data (jika menambah/mengubah offset, key, ukuran, tabel)
-<file + baris PKHeX / sumber lain>
+## Data source (if you add/change an offset, key, size or table)
+<PKHeX file + line / other source>
 
-## Pengujian
-- [ ] `make -f Makefile.host test` lulus
-- [ ] Build `.nro` berhasil (`make`)
-- [ ] Diuji di konsol asli (sebutkan: game, versi game, versi Atmosphère/firmware)
-- [ ] Hanya diuji di PC (tidak diuji di konsol)
+## Testing
+- [ ] `make -f Makefile.host test` passes
+- [ ] `.nro` build succeeds (`make`)
+- [ ] Tested on a real console (state: game, game version, Atmosphère/firmware version)
+- [ ] Tested on PC only (not on a console)
 
-## Keamanan
-- [ ] Tidak melemahkan: konfirmasi `+`, verifikasi hash, backup, baca-ulang, urutan hapus entri bank
-- [ ] Tidak menambah dependensi libnx di file portabel
-- [ ] Tidak ada save, ROM, atau key yang ikut ter-commit
+## Safety
+- [ ] Does not weaken: `+` confirmation, hash verification, backup, read-back, bank entry removal order
+- [ ] Does not add libnx dependencies to portable files
+- [ ] No saves, ROMs or keys were committed
 ```
 
-## Menambah game atau format baru
+## Adding a game or format
 
-1. Cari implementasi acuannya di PKHeX (accessor blok save, ukuran slot, key blok box, crypto Pokémon).
-2. Tambahkan `Fmt` dan `FmtInfo` (ukuran slot, offset nickname/level) serta entri `GameDef` di `source/games.h`
-   (title ID resmi, nama file save, family, key/offset, jumlah box dan slot).
-3. Jika formatnya baru (bukan SCBlock/BDSP), tambahkan family baru di `sav.cpp` dengan verifikasi hash/checksum yang ketat.
-4. Tambahkan tes round-trip di `test/test_core.cpp` (muat → ubah → bangun → muat ulang → bandingkan) dan tes save yang dirusak harus ditolak.
-5. Perbarui README (tabel game) dan `AI_CONTEXT.md`.
-6. Jangan mengaktifkan dukungan game baru di rilis sebelum diuji pada save asli.
+1. Find the reference implementation in PKHeX (save block accessor, slot size, box block key, Pokémon crypto).
+2. Add the `Fmt` and `FmtInfo` (slot size, nickname/level offsets) and a `GameDef` entry in `source/games.h`
+   (official title ID, save file name, family, keys/offsets, number of boxes and slots).
+3. If the format is new (not SCBlock/BDSP), add a new family in `sav.cpp` with strict hash/checksum verification.
+4. Add round-trip tests in `test/test_core.cpp` (load → modify → build → reload → compare), and tests that a corrupted save is rejected.
+5. Update the README (games table) and `AI_CONTEXT.md`.
+6. Do not enable a new game in a release before it has been tested with a real save.
 
-## Melaporkan bug
+For a new **conversion pair**, follow `AI_CONTEXT.md` §5 rule 8 and `tools/GOLDEN.md`: generated tables, a golden comparison
+against PKHeX, host tests, and the UI warning.
 
-Buka Issue dengan informasi berikut:
+## Reporting bugs
 
-- Game, versi game (angka update), dan jumlah user di konsol
-- Versi Atmosphère dan firmware
-- Versi Monolit (lihat judul menu) dan cara memasang/menjalankannya (applet/album atau title override)
-- Langkah yang dilakukan dan pesan error yang tampil di layar
-- Apakah save masih bisa dimuat game setelahnya
+Open an Issue with:
 
-**Keamanan data:** jangan melampirkan file save, ROM, `prod.keys`, atau dump firmware di Issue publik.
-Jika masalah menyangkut save yang tidak bisa dimuat, sebutkan ukuran file dan pesan error, dan kami akan mencari cara berbagi yang aman.
+- The game, game version (update number), and number of users on the console
+- Atmosphère and firmware versions
+- Monolit version (see the menu title) and how you launch it (applet/album or title override)
+- The steps you took and the error message shown on screen
+- Whether the save can still be loaded by the game afterwards
 
-Kerentanan atau bug yang bisa merusak save tanpa peringatan: laporkan lebih dulu lewat Issue bertanda `safety`
-(atau kontak maintainer) dan hindari menyertakan langkah detail yang menyulitkan pengguna lain sebelum ada perbaikan.
+**Data safety:** do not attach save files, ROMs, `prod.keys` or firmware dumps to public Issues. If the problem concerns a save
+that cannot be loaded, state the file size and error message, and we will find a safe way to share it.
 
-## Gaya kode dan commit
+For vulnerabilities or bugs that can corrupt a save without warning: report them first through an Issue labelled `safety`
+(or contact the maintainer) and avoid including detailed steps that could hurt other users before a fix exists.
 
-- C++17, tanpa RTTI dan tanpa exception (sesuai `Makefile`).
-- Ikuti gaya file di sekitarnya: indentasi 4 spasi, komentar dalam bahasa Inggris, teks UI dalam bahasa Indonesia.
-- Hindari alokasi besar yang tidak perlu; target RAM aplikasi homebrew mode applet terbatas.
-- Periksa semua nilai kembalian I/O (`fopen`, `fwrite`, `fclose`, `Result`) dan kembalikan pesan error yang jelas ke UI.
-- Pesan commit singkat dan deskriptif, boleh bahasa Indonesia atau Inggris, contoh:
-  - `fix(bank): pulihkan dari .bak jika file utama hilang`
-  - `feat(ui): tambah pemilih profil pengguna`
-  - `test(sav): tambah kasus save terpotong`
+## Code and commit style
 
-## Kontribusi dengan bantuan AI
+- C++17, no RTTI, no exceptions (as set in the `Makefile`).
+- Follow the style of the surrounding file: 4-space indentation, English comments, English UI text.
+- Avoid unnecessary large allocations; RAM for applet-mode homebrew is limited.
+- Check every I/O return value (`fopen`, `fwrite`, `fclose`, `Result`) and return a clear error message to the UI.
+- Short, descriptive commit messages, for example:
+  - `fix(bank): recover from .bak when the main file is missing`
+  - `feat(ui): add user profile picker`
+  - `test(sav): add truncated save case`
 
-Boleh memakai asisten AI, dengan syarat:
-- Kamu memahami dan sudah menguji kode yang diajukan, dan mencantumkan bahwa AI dipakai jika sebagian besar PR dihasilkan olehnya.
-- AI tidak boleh "mengarang" offset, key, atau ukuran. Semuanya harus diverifikasi ke PKHeX.
-- Berikan `AI_CONTEXT.md` ke asisten kamu sebagai konteks proyek.
+## AI-assisted contributions
 
-## Lisensi
+AI assistants are welcome, provided that:
+- You understand and have tested the code you submit, and you state that AI was used if most of the PR was generated by it.
+- The AI must not "invent" offsets, keys or sizes. Everything must be verified against PKHeX.
+- Give `AI_CONTEXT.md` to your assistant as project context.
 
-Monolit dirilis di bawah **GPL-3.0** karena offset, key blok, enkripsi, dan tabel diambil dari PKHeX (GPL-3.0).
-Dengan mengirim kontribusi, kamu setuju kontribusimu dirilis di bawah lisensi yang sama.
-Jangan menyertakan kode atau data yang lisensinya tidak kompatibel dengan GPL-3.0, atau materi berhak cipta
-(ROM, key konsol, aset game). Teks lengkap lisensi ada di [`LICENSE`](LICENSE).
+## License
 
-## Disclaimer dan aturan merek dagang
+Monolit is released under **GPL-3.0** because offsets, block keys, encryption and tables come from PKHeX (GPL-3.0).
+By submitting a contribution you agree that it is released under the same license.
+Do not include code or data whose license is incompatible with GPL-3.0, or copyrighted material (ROMs, console keys, game assets).
+The full license text is in [`LICENSE`](LICENSE).
 
-Proyek ini **tidak berafiliasi, tidak disponsori, dan tidak didukung** oleh Nintendo, The Pokémon Company, Creatures Inc., atau GAME FREAK inc.
-Pokémon dan nama game terkait adalah merek dagang pemiliknya.
+## Disclaimer and trademark rules
 
-- Jangan menambahkan logo, gambar, sprite, ikon, musik, atau aset resmi lain (termasuk di UI, ikon `.nro`, dan dokumentasi).
-  UI memakai teks dan bentuk generik buatan sendiri.
-- Jangan menjual Monolit atau menarik bayaran dengan memakai nama/merek Pokémon.
-- Dengan memakai CFW/homebrew, pengguna melanggar ToS Nintendo dan menanggung risiko ban online. Jangan menulis dokumentasi yang
-  menjanjikan "aman dari ban".
-- Rilis `.nro` harus mengikuti [`RELEASING.md`](RELEASING.md) (source + `LICENSE` + `NOTICE.md`). Atribusi ada di [`NOTICE.md`](NOTICE.md).
+This project is **not affiliated with, sponsored by, or endorsed by** Nintendo, The Pokémon Company, Creatures Inc. or GAME FREAK inc.
+Pokémon and related game names are trademarks of their respective owners.
+
+- Do not add official logos, images, sprites, icons, music or other assets (including in the UI, the `.nro` icon and the documentation).
+  The UI uses its own plain text and generic shapes.
+- Do not sell Monolit or charge money using the Pokémon name or brand.
+- By using CFW/homebrew, users violate Nintendo's ToS and take on the risk of an online ban. Do not write documentation that
+  promises "ban-safe" use.
+- `.nro` releases must follow [`RELEASING.md`](RELEASING.md) (source + `LICENSE` + `NOTICE.md`). Attribution is in [`NOTICE.md`](NOTICE.md).

@@ -115,14 +115,14 @@ uint8_t basePP(uint16_t move) { return move < PP8_COUNT ? PP8[move] : 0; }
 const char* describe(Result r) {
     switch (r) {
         case OK: return "OK";
-        case SAME_FORMAT: return "Format sama, tidak perlu konversi";
-        case UNSUPPORTED_FORMAT: return "Konversi antar game ini belum didukung";
-        case EMPTY: return "Slot kosong";
-        case EGG: return "Telur tidak bisa dikonversi";
-        case NOT_IN_GAME: return "Pokémon ini tidak ada di game tujuan";
-        case NOT_TRANSFERABLE: return "Spesies ini tidak bisa dipindah ke/dari BD/SP (aturan HOME)";
-        case FOREIGN_ORIGIN: return "Pokémon ini sudah pernah dipindah dari game lain (belum didukung)";
-        case BAD_DATA: return "Data Pokémon tidak valid";
+        case SAME_FORMAT: return "Same format, no conversion needed";
+        case UNSUPPORTED_FORMAT: return "Conversion between these games is not supported yet";
+        case EMPTY: return "Slot is empty";
+        case EGG: return "Eggs cannot be converted";
+        case NOT_IN_GAME: return "This Pokémon does not exist in the destination game";
+        case NOT_TRANSFERABLE: return "This species cannot be moved to/from BD/SP (HOME rule)";
+        case FOREIGN_ORIGIN: return "This Pokémon was already transferred from another game (not supported yet)";
+        case BAD_DATA: return "Invalid Pokémon data";
     }
     return "?";
 }

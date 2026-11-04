@@ -32,9 +32,9 @@ or Pokémon HOME required.
 
 Not yet supported: Let's Go Pikachu/Eevee and Pokémon Legends: Z-A.
 
-Pokémon in the bank can only be returned to games that use the same format
-(for example, Sword ↔ Shield or Scarlet ↔ Violet). Cross-generation conversion
-like Pokémon HOME is not available.
+Pokémon in the bank can be returned to games that use the same format (for example,
+Sword ↔ Shield or Scarlet ↔ Violet). The only cross-game conversion available is
+Sword/Shield ↔ Brilliant Diamond/Shining Pearl; see [Cross-game conversion](#cross-game-conversion).
 
 
 ## Controls

@@ -1,15 +1,17 @@
-# Panduan rilis (kepatuhan GPL-3.0)
+# Release guide (GPL-3.0 compliance)
 
-Cara termudah: jalankan `tools/release.sh` (tes, build, lalu paket `dist/Monolit-vX.Y.Z.zip` berisi `.nro`, arsip source, `LICENSE`, `NOTICE.md`, `SHA256SUMS.txt`). Commit semua perubahan dulu dan beri tag git, supaya source cocok dengan biner.
+Easiest way: run `tools/release.sh`. It runs the tests, builds, and creates `dist/Monolit-vX.Y.Z.zip` containing the `.nro`,
+a source archive, `LICENSE`, `NOTICE.md` and `SHA256SUMS.txt`. Commit all changes and create a git tag first so the source
+matches the binary.
 
-Setiap kali mendistribusikan `Monolit.nro` (GitHub Release, forum, Discord, dll.) wajib:
+Whenever you distribute `Monolit.nro` (GitHub Release, forum, Discord, etc.) you must:
 
-1. **Sertakan source yang sama persis** dengan biner: tag git (mis. `v0.2.0`) dan arsip source (`git archive`) di halaman rilis yang sama.
-2. **Sertakan `LICENSE` dan `NOTICE.md`** di paket rilis (zip).
-3. **Tulis di catatan rilis**: lisensi GPL-3.0, tautan source, dan versi devkitPro/libnx yang dipakai untuk build.
-4. Jangan menambah pembatasan tambahan di luar GPL-3.0 (mis. "dilarang dibagikan ulang") pada biner atau source.
-5. Jangan menyertakan save, ROM, `prod.keys`, atau aset resmi dalam paket.
-6. **Jangan dijual.** Tidak ada ads/donasi yang mengaitkan proyek dengan merek Pokémon. Gratis saja paling aman terhadap pemegang merek.
-7. Salin peringatan risiko ban (README, bagian "Peringatan penting") ke catatan rilis.
+1. **Include the exact source of the binary:** a git tag (e.g. `v0.2.0`) and a source archive (`git archive`) on the same release page.
+2. **Include `LICENSE` and `NOTICE.md`** in the release package (zip).
+3. **State in the release notes:** the GPL-3.0 license, the source link, and the devkitPro/libnx versions used to build.
+4. Do not add restrictions beyond GPL-3.0 (for example "no redistribution") to the binary or the source.
+5. Do not include saves, ROMs, `prod.keys` or official assets in the package.
+6. **Do not sell it.** No ads or donations that tie the project to the Pokémon brand. Keeping it free is the safest option with respect to trademark holders.
+7. Copy the ban-risk warning (README, "Important warnings" section) into the release notes.
 
-Contoh paket: `Monolit-v0.2.0.zip` → `Monolit.nro`, `LICENSE`, `NOTICE.md`, `README.md`, tautan ke source.
+Example package: `Monolit-v0.2.0.zip` → `Monolit.nro`, `LICENSE`, `NOTICE.md`, `README.md`, link to the source.
