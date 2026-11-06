@@ -23,7 +23,7 @@ enum Result {
     EGG,                 // HOME does not accept eggs
     NOT_TRANSFERABLE,    // HOME rejects it outright (PB8 Nincada / Spinda)
     NOT_IN_GAME,         // species/form is not present in the destination game
-    FOREIGN_ORIGIN,      // already transferred from another game into SwSh (not handled yet)
+    FOREIGN_ORIGIN,      // came into this game by conversion and its original data is not available
     BAD_DATA,
 };
 
@@ -36,5 +36,8 @@ bool supported(Fmt from, Fmt to);
 bool presentInGame(Fmt fmt, uint16_t species, uint8_t form);
 
 // Converts one box slot (fmt-sized, encrypted) into an encrypted slot for `to`. `out` is only valid on OK.
-Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out);
+// `origSide` (optional): the encrypted slot this same Pokemon had in the destination format on an earlier visit (see
+// sidedata.h). When it matches, the destination game's own data (moves, ball, location, ability, version, ...) is
+// restored from it instead of being rebuilt, and `*restored` is set.
+Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide = nullptr, bool* restored = nullptr);
 }  // namespace conv

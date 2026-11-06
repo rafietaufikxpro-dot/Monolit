@@ -9,6 +9,7 @@
 #include "../source/conv_data.h"
 #include "../source/convert.h"
 #include "../source/pk.h"
+#include "../source/sidedata.h"
 
 static int fails = 0;
 #define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
@@ -145,6 +146,82 @@ int main() {
         auto a = plain(FMT_PK8, src), b = plain(FMT_PK8, back);
         CHECK(memcmp(&a[0x1C], &b[0x1C], 4) == 0 && memcmp(&a[0x8C], &b[0x8C], 4) == 0 && memcmp(&a[0xF8], &b[0xF8], 26) == 0);
         CHECK(a[0xDE] == b[0xDE] && r16(a, 0x122) == r16(b, 0x122));
+    }
+
+    // ---- side data: round trips restore the original game's own data (like HOME keeping each game's data)
+    {
+        // native Sword Pokemon with distinctive moves/ball/location, ability 4 (hidden)
+        auto orig = make(FMT_PK8, 25, 0, 40, 44, 77, 7);
+        { auto p = plain(FMT_PK8, orig); w16(p, 0x72, 85); w16(p, 0x74, 98); w16(p, 0x76, 21); w16(p, 0x78, 129);
+          p[0x7A] = 15; p[0x7B] = 30; p[0x7C] = 20; p[0x7D] = 10; p[0x7E] = 2; w16(p, 0x82, 57); p[0x16] = 4; p[0x16] |= 0x10;
+          w16(p, 0x120, 0); pkEncryptSlot(FMT_PK8, p); orig = p; }
+        std::vector<uint8_t> mid, back;
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, orig.data(), mid) == conv::OK);
+        bool restored = true;
+        // without side data: reset (as before)
+        CHECK(conv::convertSlot(FMT_PB8, FMT_PK8, mid.data(), back, nullptr, &restored) == conv::OK && !restored);
+        // with the original slot: moves, PP, PP Ups, relearn, ability, gigantamax flag, ball and location come back
+        CHECK(conv::convertSlot(FMT_PB8, FMT_PK8, mid.data(), back, orig.data(), &restored) == conv::OK && restored);
+        auto a = plain(FMT_PK8, orig), b = plain(FMT_PK8, back);
+        CHECK(memcmp(&a[0x72], &b[0x72], 0x18) == 0);        // moves, PP, PP Ups, relearn
+        CHECK(a[0x16] == b[0x16] && memcmp(&a[0x14], &b[0x14], 2) == 0);
+        CHECK(b[0x124] == 7 && r16(b, 0x122) == 77 && b[0xDE] == 44);
+        CHECK(r16(b, 0x0A) == 0);                            // held item still removed
+        CHECK(checksumOk(b));
+        // a different Pokemon's data is never used
+        auto other = make(FMT_PK8, 25, 0, 40, 44, 77, 7);
+        { auto p = plain(FMT_PK8, other); w32(p, 0x1C, 0x11111111u); pkEncryptSlot(FMT_PK8, p); other = p; }
+        CHECK(conv::convertSlot(FMT_PB8, FMT_PK8, mid.data(), back, other.data(), &restored) == conv::OK && !restored);
+    }
+    {
+        // Brilliant Diamond Pokemon -> Sword/Shield -> back to BD/SP
+        auto orig = make(FMT_PB8, 25, 0, 30, 48 /*BD*/, 200, 11);
+        { auto p = plain(FMT_PB8, orig); w16(p, 0x72, 85); w16(p, 0x74, 98); p[0x7A] = 15; p[0x7B] = 30; pkEncryptSlot(FMT_PB8, p); orig = p; }
+        std::vector<uint8_t> sw, back;
+        CHECK(conv::convertSlot(FMT_PB8, FMT_PK8, orig.data(), sw) == conv::OK);
+        auto s1 = plain(FMT_PK8, sw);
+        CHECK(s1[0xDE] == 44 && r16(s1, 0x122) == 59999);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, sw.data(), back) == conv::FOREIGN_ORIGIN);          // no original data
+        bool restored = false;
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, sw.data(), back, orig.data(), &restored) == conv::OK && restored);
+        auto a = plain(FMT_PB8, orig), b = plain(FMT_PB8, back);
+        CHECK(b[0xDE] == 48);                                  // original version is back
+        CHECK(r16(b, 0x122) == 200 && b[0x124] == 11);         // original location and ball
+        CHECK(memcmp(&a[0x72], &b[0x72], 0x18) == 0);          // original moves
+        CHECK(memcmp(&a[0x1C], &b[0x1C], 4) == 0 && memcmp(&a[0x8C], &b[0x8C], 4) == 0 && memcmp(&a[0xF8], &b[0xF8], 26) == 0);
+        CHECK(checksumOk(b));
+        // Shining Pearl works the same way (magic location 59998)
+        auto sp = make(FMT_PB8, 25, 0, 30, 49 /*SP*/, 150, 4);
+        std::vector<uint8_t> sh, spBack;
+        CHECK(conv::convertSlot(FMT_PB8, FMT_PK8, sp.data(), sh) == conv::OK);
+        CHECK(plain(FMT_PK8, sh)[0xDE] == 45 && r16(plain(FMT_PK8, sh), 0x122) == 59998);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, sh.data(), spBack, sp.data(), &restored) == conv::OK);
+        CHECK(plain(FMT_PB8, spBack)[0xDE] == 49);
+        // other origins (e.g. Legends: Arceus placeholder) are still refused even if data were provided
+        auto la = make(FMT_PK8, 25, 0, 10, 44, 60000);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, la.data(), back, orig.data(), &restored) == conv::FOREIGN_ORIGIN);
+    }
+    // ---- SideStore file
+    {
+        const std::string path = "/tmp/monolit_sides_test.dat";
+        remove(path.c_str()); remove((path + ".bak").c_str());
+        SideStore st; std::string err;
+        CHECK(st.load(path, err) && st.entries.empty());                      // missing file = empty store
+        auto a = make(FMT_PK8, 25, 0, 40, 44, 77, 7), b = make(FMT_PB8, 133, 0, 20, 48, 12, 4);
+        st.put(FMT_PK8, a.data()); st.put(FMT_PB8, b.data()); st.put(FMT_PK8, a.data());   // same identity twice -> one entry
+        CHECK(st.entries.size() == 2);
+        CHECK(st.save(path, err));
+        SideStore st2;
+        CHECK(st2.load(path, err) && st2.entries.size() == 2);
+        SideKey k; CHECK(sideKeyOf(FMT_PK8, a.data(), k));
+        const SideEntry* e = st2.find(FMT_PK8, k);
+        const SideEntry* e2 = st2.find(FMT_PB8, k);  // the synthetic slots share one identity, so each format has its own entry
+        CHECK(e && e->slot == a && e2 && e2->slot == b);
+        // tampering is detected
+        { FILE* f = fopen(path.c_str(), "r+b"); fseek(f, 30, SEEK_SET); int c = fgetc(f); fseek(f, 30, SEEK_SET); fputc(c ^ 1, f); fclose(f); }
+        SideStore st3;
+        CHECK(!st3.load(path, err) && st3.entries.empty());
+        remove(path.c_str()); remove((path + ".bak").c_str());
     }
     printf(fails ? "\n%d FAILED\n" : "\nCONVERT TESTS PASSED\n", fails);
     return fails ? 1 : 0;

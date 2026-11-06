@@ -26,6 +26,8 @@ Hardening release. **Not yet tested on real hardware.**
 - Initial version: copy/move/withdraw between saves and an offline bank for SwSh, BDSP, LA, SV.
 
 ## Unreleased
+- Round trips SwSh <-> BD/SP: original per-game data of converted Pokémon is kept in `sides.dat` and restored when the Pokémon returns to that game (HOME-like). A Pokémon with a HOME placeholder location and no stored original data is still refused. New `sidedata.cpp/.h`, tests in `test/test_convert.cpp`.
+- Author/version now come from one place (`APP_AUTHOR`/`APP_VERSION` in the Makefile): shown in the homebrew menu via the `.nacp` and in the app menu ("Monolit vX by <author>"). The `.nacp` is now rebuilt whenever the Makefile changes (before, a stale `.nacp` could keep showing "Unspecified Author").
 - Renamed the project from PokeBank to Monolit (trademark caution). Data folder is now `sdmc:/switch/Monolit` and the bank file `monolit.bank`; an existing `sdmc:/switch/PokeBank` folder is moved automatically on first start (nothing is deleted).
 - Cross-game conversion phase 1: PK8 <-> PB8 (`convert.cpp`, generated `conv_data.*`, `tools/gen_convert_tables.py`), shown in the withdraw list as KONVERSI with a confirmation dialog. Verified against PKHeX with a golden test (`tools/GOLDEN.md`).
 - GPL-3.0 (SPDX) header in all source files; `tools/release.sh` builds a release package that includes the source; copyright/author: rafietaufik.

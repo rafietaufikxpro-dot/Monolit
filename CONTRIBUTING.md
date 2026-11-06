@@ -77,6 +77,7 @@ but that is **not** a replacement for a full build.
 | `source/sav.cpp/.h` | Load, verify, modify and rebuild save files (portable) |
 | `source/pk.cpp/.h` | Read-only Pokémon summary and Gen 8 slot crypto (portable) |
 | `source/convert.cpp/.h` | Cross-game conversion, PK8 <-> PB8 (portable) |
+| `source/sidedata.cpp/.h` | Store of original per-game slots for converted Pokémon (`sides.dat`, portable) |
 | `source/conv_data.*` | Conversion tables generated from PKHeX by `tools/gen_convert_tables.py`. **Do not edit by hand.** |
 | `source/bank.cpp/.h` | `PKBANK01` bank file format (portable) |
 | `source/hash.cpp/.h` | SHA-256 and MD5 (portable) |
