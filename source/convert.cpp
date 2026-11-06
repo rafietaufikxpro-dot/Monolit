@@ -121,7 +121,7 @@ const char* describe(Result r) {
         case EGG: return "Eggs cannot be converted";
         case NOT_IN_GAME: return "This Pokémon does not exist in the destination game";
         case NOT_TRANSFERABLE: return "This species cannot be moved to/from BD/SP (HOME rule)";
-        case FOREIGN_ORIGIN: return "This Pokémon was already transferred from another game (not supported yet)";
+        case FOREIGN_ORIGIN: return "Converted from another game earlier, but its original data is not stored on this SD card";
         case BAD_DATA: return "Invalid Pokémon data";
     }
     return "?";
@@ -142,7 +142,8 @@ bool presentInGame(Fmt fmt, uint16_t species, uint8_t form) {
     return idx < t.count && t.rec[idx].present != 0;
 }
 
-Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out) {
+Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide, bool* restored) {
+    if (restored) *restored = false;
     if (from == to) return SAME_FORMAT;
     if (!supported(from, to)) return UNSUPPORTED_FORMAT;
     std::vector<uint8_t> s;
@@ -158,7 +159,21 @@ Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t
     if ((from == FMT_PB8 || to == FMT_PB8) && (species == 290 || species == 327)) return NOT_TRANSFERABLE;
     if (!presentInGame(to, species, form)) return NOT_IN_GAME;
     const uint16_t srcMet = rd16(&s[0x122]), srcEgg = rd16(&s[0x120]);
-    if (from == FMT_PK8 && srcMet >= SHLG && srcMet <= SWLA) return FOREIGN_ORIGIN;
+    const bool magic = from == FMT_PK8 && srcMet >= SHLG && srcMet <= SWLA;  // already transferred from another game into SwSh
+
+    // Stored per-game data from an earlier visit of this exact Pokemon to the destination game (HOME keeps this too).
+    std::vector<uint8_t> S;
+    bool haveSide = false;
+    if (origSide && pkDecryptSlot(to, origSide, S) && S.size() == s.size() && rd32(&S[0]) == rd32(&s[0]) && rd32(&S[0x1C]) == rd32(&s[0x1C]) &&
+        rd16(&S[0x08]) == species && S[0x24] == form) {
+        bool remap;
+        const uint16_t expect = remappedVersion(S[0xDE], remap);  // the version a SwSh copy of the original would carry
+        haveSide = (S[0xDE] == s[0xDE]) || (to == FMT_PB8 && expect == s[0xDE]);
+    }
+    // Without the original data we cannot restore it, and PKHeX's fallback (keeping the HOME placeholder location and the
+    // SW/SH version in a BD/SP save) is not something the game ever produces, so refuse instead.
+    if (magic && !haveSide) return FOREIGN_ORIGIN;
+    if (magic && !(srcMet == SWBD || srcMet == SHSP)) return FOREIGN_ORIGIN;  // other origins need their own formats
 
     const GameTable& t = tableFor(to);
     const int idx = formIndex(t, species, form);
@@ -190,6 +205,26 @@ Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t
         d[0x51] = (uint8_t)(rnd(0x81) + rnd(0x80));
     }
 
+    const uint8_t level = levelFromExp(rd32(&s[0x10]), pr.growth);
+    if (haveSide) {
+        // 2+3) restore the destination game's own data from the earlier visit; shared fields keep their current values
+        auto isCore = [](int o) {
+            if (o >= 0x34 && o < 0x48) return true;  // ribbons (masked above)
+            for (const Range& r : CORE) if (o >= r.off && o < r.off + r.len) return true;
+            return false;
+        };
+        for (int o = 0x08; o < 0x148; o++) {
+            if (isCore(o)) continue;
+            if (o == 0x0A || o == 0x0B) continue;   // held item stays removed
+            if (o == 0x8A || o == 0x8B) continue;   // current HP: recomputed
+            if (o >= 0x94 && o < 0x98) continue;    // status condition
+            if (o == 0x16 || o == 0x22) continue;   // flags: merged below
+            d[o] = S[o];
+        }
+        d[0x16] = (uint8_t)((S[0x16] & 0x17) | (s[0x16] & 0x08));  // ability number + gigantamax from the old data, favorite stays
+        d[0xDE] = S[0xDE];                                          // original game version
+        if (restored) *restored = true;
+    } else {
     // 2) per-game data rebuilt for the destination (PKHeX GameDataPK8/PB8 InitializeFrom + CopyTo)
     const uint8_t abilityNumber = s[0x16] & 7;
     int ai = abilityNumber >> 1;
@@ -220,12 +255,13 @@ Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t
     }
 
     // 3) moves are reset to what the destination game would give at this level (relearn moves are cleared)
-    const uint8_t level = levelFromExp(rd32(&s[0x10]), pr.growth);
     uint16_t mv[4] = {0, 0, 0, 0};
     encounterMoves(t, idx, level, mv);
     for (int i = 0; i < 4; i++) {
         wr16(&d[0x72 + i * 2], mv[i]);
         d[0x7A + i] = basePP(mv[i]);
+    }
+
     }
 
     // 4) party stats (PKM.ResetPartyStats): level, current HP = max HP, stats from destination base stats

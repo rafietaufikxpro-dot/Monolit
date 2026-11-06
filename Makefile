@@ -15,9 +15,12 @@ DATA        :=
 INCLUDES    := source
 
 APP_TITLE   := Monolit
-# Override from the command line: make APP_AUTHOR="nama kamu"
+# Override from the command line: make APP_AUTHOR="your name"
 APP_AUTHOR  ?= rafietaufik
 APP_VERSION := 0.2.0
+
+# Shown in-app (menu) and in the homebrew menu via the .nacp; single source of truth is APP_AUTHOR / APP_VERSION above.
+DEFINES  := -DAPP_VERSION_STR='"$(APP_VERSION)"' -DAPP_AUTHOR_STR='"$(APP_AUTHOR)"'
 
 ARCH     := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS   := -g -Wall -O2 -ffunction-sections $(ARCH) $(DEFINES)
@@ -68,6 +71,8 @@ DEPENDS := $(OFILES:.o=.d)
 
 all: $(OUTPUT).nro
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
+# Rebuild the .nacp (title/author/version shown in the homebrew menu) whenever this Makefile changes.
+$(OUTPUT).nacp: $(TOPDIR)/Makefile
 $(OUTPUT).elf: $(OFILES)
 
 -include $(DEPENDS)

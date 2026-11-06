@@ -25,18 +25,28 @@
 #include "games.h"
 #include "pk.h"
 #include "sav.h"
+#include "sidedata.h"
 #include "ui.h"
 
 static const char* DIR_ROOT = "sdmc:/switch/Monolit";
 static const char* DIR_BACKUP = "sdmc:/switch/Monolit/backups";
 static const char* BANK_FILE = "sdmc:/switch/Monolit/monolit.bank";
+static const char* SIDES_FILE = "sdmc:/switch/Monolit/sides.dat";
 
-static const char* APP_VERSION = "0.2.0";
+#ifndef APP_VERSION_STR
+#define APP_VERSION_STR "0.2.0"
+#endif
+#ifndef APP_AUTHOR_STR
+#define APP_AUTHOR_STR "rafietaufik"
+#endif
+static const char* APP_VERSION = APP_VERSION_STR;
+static const char* APP_AUTHOR = APP_AUTHOR_STR;
 static const int KEEP_BACKUPS = 10;  // newest backups kept per game
 
 static PadState g_pad;
 static AccountUid g_uid;
 static Bank g_bank;
+static SideStore g_sides;  // original per-game data of converted Pokemon (see sidedata.h)
 
 using DrawFn = std::function<void()>;
 static const DrawFn NO_BASE = [] {};
@@ -261,19 +271,22 @@ struct PickResult {
     std::vector<uint8_t> data;      // bytes to write into the save (converted if `converted`)
     bool converted = false;
     Fmt from = FMT_NONE;
+    std::vector<uint8_t> srcSlot;   // the bank entry's original slot (kept as side data once the save is written)
 };
 
 // Lists bank entries of this format plus convertible ones (PK8 <-> PB8). Converted data is computed once up front.
 static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int haveDlc) {
-    struct Row { int bank; conv::Result res; std::vector<uint8_t> data; };
+    struct Row { int bank; conv::Result res; std::vector<uint8_t> data; bool restored = false; };
     std::vector<Row> rows;
     for (size_t i = 0; i < g_bank.entries.size(); i++) {
         const BankEntry& e = g_bank.entries[i];
         if (taken[i]) continue;
-        if (e.fmt == fmt) { rows.push_back({(int)i, conv::OK, {}}); continue; }
+        if (e.fmt == fmt) { rows.push_back(Row{(int)i, conv::OK, {}, false}); continue; }
         if (!conv::supported(e.fmt, fmt)) continue;
-        Row r{(int)i, conv::OK, {}};
-        r.res = conv::convertSlot(e.fmt, fmt, e.data.data(), r.data);
+        Row r{(int)i, conv::OK, {}, false};
+        SideKey key;
+        const SideEntry* se = sideKeyOf(e.fmt, e.data.data(), key) ? g_sides.find(fmt, key) : nullptr;  // earlier visit to this game?
+        r.res = conv::convertSlot(e.fmt, fmt, e.data.data(), r.data, se ? se->slot.data() : nullptr, &r.restored);
         rows.push_back(std::move(r));
     }
     int cur = 0, top = 0;
@@ -289,8 +302,17 @@ static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int have
             ui::Col col = ui::WARN;
             if (be.fmt != fmt) {
                 const FmtInfo* sf = fmtInfo(be.fmt);
-                if (rows[i].res == conv::OK) right = std::string("CONVERT from ") + (sf ? sf->name : "?");
-                else { right = "CANNOT: " + std::string(conv::describe(rows[i].res)); col = ui::BAD; }
+                if (rows[i].res == conv::OK) right = std::string("CONVERT from ") + (sf ? sf->name : "?") + (rows[i].restored ? " + original data" : "");
+                else {
+                    switch (rows[i].res) {
+                        case conv::FOREIGN_ORIGIN: right = "CANNOT: original data missing"; break;
+                        case conv::NOT_IN_GAME: right = "CANNOT: not in this game"; break;
+                        case conv::EGG: right = "CANNOT: egg"; break;
+                        case conv::NOT_TRANSFERABLE: right = "CANNOT: not allowed"; break;
+                        default: right = "CANNOT: see A"; break;
+                    }
+                    col = ui::BAD;
+                }
             } else if (bankDlcNeeded(be) > haveDlc) {
                 right = std::string("NEEDS ") + dlcName(fmt, bankDlcNeeded(be));
             }
@@ -308,12 +330,15 @@ static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int have
             PickResult pr;
             pr.index = rows[cur].bank;
             pr.from = be.fmt;
+            pr.srcSlot = be.data;
             if (be.fmt == fmt) { pr.data = be.data; return pr; }
             if (rows[cur].res != conv::OK) { notice(draw, "Cannot convert", conv::describe(rows[cur].res), true); continue; }
             const FmtInfo* sf = fmtInfo(be.fmt);
             const FmtInfo* df = fmtInfo(fmt);
-            std::string body = std::string("From ") + (sf ? sf->name : "?") + " to " + (df ? df->name : "?") + ".\n"
-                "Moves are reset to what the destination game gives at this level, ability/ball/location are adjusted and the held item is removed. The original moves cannot be recovered once written.\n"
+            std::string body = std::string("From ") + (sf ? sf->name : "?") + " to " + (df ? df->name : "?") + ".\n" +
+                (rows[cur].restored
+                    ? "This Pokémon has been in the destination game before: its original moves, ball, location and ability are restored from the data Monolit kept. The held item is removed.\n"
+                    : "Moves are reset to what the destination game gives at this level, ability/ball/location are adjusted and the held item is removed. Monolit keeps a copy of the original data so it can be restored if the Pokémon returns to its original game.\n") +
                 "The result has no valid HOME tracker: use it OFFLINE ONLY (not with real HOME, trades or online battles).";
             if (fmt == FMT_PK8) body += "\nIf this Pokémon only exists in the Sword/Shield DLC, make sure the destination save has that DLC.";
             if (!confirmA(draw, "Cross-game conversion", body, "Convert", "Cancel", true)) continue;
@@ -390,6 +415,8 @@ static void screenSave(const GameDef& g) {
     int box = 0, cur = 0;
     bool dirty = false;
     std::vector<bool> taken(g_bank.entries.size(), false);  // bank entries withdrawn, pending removal
+    struct PendingSide { Fmt fmt; std::vector<uint8_t> slot; };
+    std::vector<PendingSide> pendingSides;                   // original slots of converted Pokemon, stored once the save is written
     std::vector<uint8_t> mark((size_t)img.boxes() * img.perBox(), 0);  // 1 = added, 2 = removed (pending write)
     std::string msg;
 
@@ -454,6 +481,7 @@ static void screenSave(const GameDef& g) {
                 if (img.put(box, cur, pk.data.data(), pk.data.size())) {
                     taken[pick] = true;
                     mark[mi] = 1;
+                    if (pk.converted) pendingSides.push_back({pk.from, pk.srcSlot});
                     dirty = true;
                     msg = pk.converted ? "Converted and placed in the slot. Press + to write to the save." : "Placed in the slot. Press + to write to the save.";
                 } else {
@@ -478,8 +506,16 @@ static void screenSave(const GameDef& g) {
                 dirty = false;
                 std::fill(mark.begin(), mark.end(), 0);
                 pruneBackups(g.titleId, KEEP_BACKUPS);
-                msg = bs ? "Written successfully. Backup saved in sdmc:/switch/Monolit/backups"
-                         : "Save written, but the bank could not be updated (the Pokémon may be duplicated in the bank).";
+                bool sidesOk = true;
+                if (!pendingSides.empty()) {  // keep each converted Pokemon's original data so it can go back to its first game intact
+                    for (const PendingSide& ps : pendingSides) g_sides.put(ps.fmt, ps.slot.data());
+                    pendingSides.clear();
+                    std::string e3;
+                    sidesOk = g_sides.save(SIDES_FILE, e3);
+                }
+                msg = !bs ? "Save written, but the bank could not be updated (the Pokémon may be duplicated in the bank)."
+                    : !sidesOk ? "Written, but the original data of converted Pokémon could not be saved (they can't be restored later)."
+                               : "Written successfully. Backup saved in sdmc:/switch/Monolit/backups";
             } else {
                 msg = "FAILED: " + err;
             }
@@ -548,6 +584,21 @@ int main(int argc, char** argv) {
                " Pokémon).\nThe next save will create a new main file; the backup copy stays intact.");
     }
 
+    {   // Original per-game data of converted Pokemon. A damaged file must never block the app or be silently overwritten.
+        std::string e4;
+        if (!g_sides.load(SIDES_FILE, e4)) {
+            const std::string bak = std::string(SIDES_FILE) + ".bak";
+            if (g_sides.load(bak, e4)) {
+                notice(NO_BASE, "Side data restored from backup", "sides.dat was damaged; the previous copy (sides.dat.bak) is being used.");
+            } else {
+                rename(SIDES_FILE, (std::string(SIDES_FILE) + ".corrupt").c_str());
+                g_sides.entries.clear();
+                notice(NO_BASE, "Side data file is damaged",
+                       e4 + "\nIt was renamed to sides.dat.corrupt and Monolit continues without it. Pokémon converted earlier can no longer get their original data back.", true);
+            }
+        }
+    }
+
     // Which Switch user's saves to use: the preselected user (title override) if any; otherwise the only
     // user, or - when several users exist - an explicit choice (the "last opened user" is just the cursor hint).
     Result rc = accountInitialize(AccountServiceType_Application);
@@ -593,6 +644,7 @@ int main(int argc, char** argv) {
             const FmtInfo* fi = fmtInfo(games[i].fmt);
             ui::row((int)i, (int)i == cur, games[i].name, avail[i] ? std::string(fi ? fi->name : "") : "save not found", avail[i] ? ui::DIM : ui::WARN);
         }
+        ui::text(40, ui::H - 170, std::string("Monolit v") + APP_VERSION + "   by " + APP_AUTHOR + "   ·   GPL-3.0", 22, ui::ACCENT);
         ui::text(40, ui::H - 140, "Bank: " + std::to_string(g_bank.entries.size()) + " Pokémon   ·   " + BANK_FILE, 20, ui::DIM);
         ui::text(40, ui::H - 110, "ALWAYS back up your saves with Checkpoint before writing.   Fan project, GPL-3.0, not affiliated with Nintendo / The Pokémon Company.", 17, ui::DIM);
         ui::footBar({{"A", "Open save"}, {"Y", "View bank"}, {"X", "Switch user"}, {"+", "Exit"}});

@@ -72,9 +72,17 @@ Diamond/Shining Pearl and vice versa, as long as the species and form are
 available in the destination game. Following Pokémon HOME rules via PKHeX,
 moves are adjusted to the destination game's learnset and held items are removed.
 
-Eggs, Nincada/Spinda, and Pokémon previously transferred from another game are
-rejected. Converted Pokémon are for offline use only and do not have a valid
-HOME tracker. PA8 and PK9 conversion are not yet supported.
+Eggs and Nincada/Spinda are rejected. Converted Pokémon are for offline use only
+and do not have a valid HOME tracker. PA8 and PK9 conversion are not yet supported.
+
+**Going back and forth:** like Pokémon HOME, Monolit keeps each Pokémon's original
+per-game data (moves, ball, met location, ability, game version) in
+`sdmc:/switch/Monolit/sides.dat` once a converted Pokémon has been written to a save.
+If the Pokémon later returns to that game, its original data is restored instead of
+being rebuilt (for example a Brilliant Diamond Pokémon moved to Sword and back is
+a Brilliant Diamond Pokémon again). A Pokémon that was converted earlier but whose
+original data is not on this SD card is rejected rather than guessed. Do not delete
+`sides.dat` if you move Pokémon between these games.
 
 ## Switch users and DLC
 

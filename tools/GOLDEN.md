@@ -20,5 +20,9 @@ except PB8 -> PK8 relearn moves in ~0.2% of cases. PKHeX adds those with its leg
 Random size scalars (both scalars 0 in the source) are rolled by Monolit from EC/PID instead of a random generator; the
 fuzzer never produces that case, so it is not compared.
 
+The side-data restore path (round trips) is deliberately NOT compared: PKHeX's EntityConverter has no such store and, for a Pokémon
+with a HOME placeholder met location, keeps the SW/SH version and the 59994-60000 location inside a BD/SP slot (run `MAGIC=1 golden_dump pk8 ...`
+to see it). Monolit refuses that case unless it can restore the real original data; see `test/test_convert.cpp`.
+
 The test uses synthetic Pokemon only. It proves Monolit matches PKHeX's simulation, not that the result is legal
 or acceptable to the real Pokemon HOME service.

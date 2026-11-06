@@ -121,7 +121,13 @@ HOME model: shared "core" fields are copied (EC, PID, IVs/EVs, nature, ribbons, 
 ability from the target personal table by ability number, moves reset to the target learnset at the current level (PP from the
 Gen 8 PP table, PP Ups 0), relearn cleared, ball kept (PK8 target: > Beast -> Poke Ball), locations mapped (PB8 local <-> mainline,
 BD/SP origin -> SwSh magic location 59999/59998 with version remapped to SW/SH), held item dropped, party stats recomputed.
-Refused: eggs, species/form not "present in game" for the target, Nincada/Spinda to/from PB8, PK8 with HOME magic met location.
+Refused: eggs, species/form not "present in game" for the target, Nincada/Spinda to/from PB8, and a PK8 with a HOME magic met location (59994-60000)
+unless its original destination-format slot is available.
+Round trips (`source/sidedata.*`, file `sdmc:/switch/Monolit/sides.dat`, magic `MONOSID1`, SHA-256 trailer): after a converted Pokémon is written to a save
+(commit success, never before), its source slot is stored keyed by (EC, PID, TID/SID) + format. `convertSlot(..., origSide)` restores every non-core
+byte (moves, PP, relearn, ability, ball, locations, Dynamax/TR data...) plus the original game version from that slot; shared fields keep their current
+values; held item stays removed. PKHeX itself does NOT do this (it would keep the SW/SH version and the 59999/59998 placeholder inside a BD/SP save), so this
+path is not covered by the golden test: it is covered by `test/test_convert.cpp`. A damaged `sides.dat` is replaced by `.bak` or renamed `.corrupt`; it never blocks the app.
 Verified byte-for-byte against PKHeX for 6000 synthetic cases (`tools/GOLDEN.md`); only known difference: PKHeX's legality-based relearn guess.
 Not covered: real-device behaviour, legality, HOME service acceptance.
 
@@ -189,7 +195,7 @@ placeholder author, missing `.bak` recovery. These are covered by host tests whe
 5. "Copy to bank" (A) creates duplicates by design; consider a visual marker or a warning.
 6. User names are printed with the libnx console font; non-ASCII nicknames may render as garbage (the list index still works).
 7. UI paging uses a fixed 34 rows; verify on handheld and docked console sizes.
-8. No app icon by default (drop a 256×256 `icon.jpg` next to the Makefile). `APP_AUTHOR` defaults to "rafietaufik".
+8. No app icon by default (drop a 256×256 `icon.jpg` next to the Makefile). `APP_AUTHOR` defaults to "rafietaufik" and is also compiled into the app (`-DAPP_AUTHOR_STR`) and shown in the menu; override with `make APP_AUTHOR="name"`.
 9. Backups: the newest `KEEP_BACKUPS` (10) per game are kept; older ones are deleted automatically after a successful write. Make configurable if users ask.
 10. Missing games: Let's Go (different format), Legends: Z-A (needs new keys/format — only add with a verified PKHeX source).
 

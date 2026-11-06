@@ -55,6 +55,13 @@ int main(int argc, char** argv) {
         p[0x126] &= 0x3F;
         uint16_t met = (uint16_t)R(300), egg = R(3) ? 0 : (uint16_t)R(300);
         if (from == FMT_PB8 && R(4) == 0) met = 65535;
+        if (from == FMT_PK8 && getenv("MAGIC")) {  // PK8 that was converted from another game (HOME "magic" met location)
+            static const uint16_t magics[] = {59994, 59995, 59996, 59997, 59998, 59999, 60000};
+            met = magics[R(7)];
+            uint32_t pick = R(3);
+            egg = pick == 0 ? (uint16_t)0 : (pick == 1 ? (uint16_t)65534 : met);
+            p[0xDE] = (uint8_t)(44 + R(2));
+        }
         memcpy(&p[0x122], &met, 2); memcpy(&p[0x120], &egg, 2);
         // Names: 12 UTF-16 letters + terminator (PKHeX treats non-zero 0x70/0x110 as "still encrypted").
         for (int base : {0x58, 0xA8, 0xF8}) {
