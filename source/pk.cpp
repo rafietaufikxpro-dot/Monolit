@@ -85,34 +85,45 @@ PkSummary pkSummarize(Fmt fmt, const uint8_t* slot) {
     return r;
 }
 
+namespace {
+// Gen 8 stored layout: 8 byte header + 4 shuffled blocks; PK8/PB8 blocks are 0x50 bytes, PA8 blocks 0x58 bytes.
+// Anything after the stored part (party stats, PK8/PB8 only) is encrypted separately with the same seed.
+struct Gen8Geom { int block, storedEnd; };
+bool gen8Geom(Fmt fmt, Gen8Geom& g) {
+    if (fmt == FMT_PK8 || fmt == FMT_PB8) { g = {0x50, 0x148}; return true; }
+    if (fmt == FMT_PA8) { g = {0x58, 0x168}; return true; }
+    return false;
+}
+}  // namespace
+
 bool pkDecryptSlot(Fmt fmt, const uint8_t* slot, std::vector<uint8_t>& plain) {
-    if (fmt != FMT_PK8 && fmt != FMT_PB8) return false;
+    Gen8Geom g;
+    if (!gen8Geom(fmt, g)) return false;
     const FmtInfo* fi = fmtInfo(fmt);
     if (!fi || !pkSlotPresent(slot)) return false;
     plain.assign(slot, slot + fi->slotSize);
     uint32_t ec = rd32(plain.data());
     uint32_t sv = (ec >> 13) & 31;
-    const int bs = 0x50, storedEnd = 0x148;
-    cryptArray(plain.data() + 8, storedEnd - 8, ec);
-    cryptArray(plain.data() + storedEnd, fi->slotSize - storedEnd, ec);
-    std::vector<uint8_t> tmp(plain.begin() + 8, plain.begin() + storedEnd);
-    for (int i = 0; i < 4; i++) memcpy(plain.data() + 8 + i * bs, tmp.data() + BLOCK_POS[(sv % 24) * 4 + i] * bs, bs);
+    cryptArray(plain.data() + 8, g.storedEnd - 8, ec);
+    if (fi->slotSize > g.storedEnd) cryptArray(plain.data() + g.storedEnd, fi->slotSize - g.storedEnd, ec);
+    std::vector<uint8_t> tmp(plain.begin() + 8, plain.begin() + g.storedEnd);
+    for (int i = 0; i < 4; i++) memcpy(plain.data() + 8 + i * g.block, tmp.data() + BLOCK_POS[(sv % 24) * 4 + i] * g.block, g.block);
     return true;
 }
 
 void pkEncryptSlot(Fmt fmt, std::vector<uint8_t>& plain) {
+    Gen8Geom g;
     const FmtInfo* fi = fmtInfo(fmt);
-    if (!fi || (int)plain.size() != fi->slotSize) return;
-    const int bs = 0x50, storedEnd = 0x148;
+    if (!gen8Geom(fmt, g) || !fi || (int)plain.size() != fi->slotSize) return;
     uint32_t ec = rd32(plain.data());
     uint32_t sv = (ec >> 13) & 31;
     uint16_t sum = 0;
-    for (int i = 8; i < storedEnd; i += 2) sum = (uint16_t)(sum + rd16(plain.data() + i));
+    for (int i = 8; i < g.storedEnd; i += 2) sum = (uint16_t)(sum + rd16(plain.data() + i));
     plain[6] = (uint8_t)sum;
     plain[7] = (uint8_t)(sum >> 8);
-    std::vector<uint8_t> tmp(plain.begin() + 8, plain.begin() + storedEnd);
+    std::vector<uint8_t> tmp(plain.begin() + 8, plain.begin() + g.storedEnd);
     // Inverse of the decrypt shuffle: plain block i goes to position BLOCK_POS[sv*4+i].
-    for (int i = 0; i < 4; i++) memcpy(plain.data() + 8 + BLOCK_POS[(sv % 24) * 4 + i] * bs, tmp.data() + i * bs, bs);
-    cryptArray(plain.data() + 8, storedEnd - 8, ec);
-    cryptArray(plain.data() + storedEnd, fi->slotSize - storedEnd, ec);
+    for (int i = 0; i < 4; i++) memcpy(plain.data() + 8 + BLOCK_POS[(sv % 24) * 4 + i] * g.block, tmp.data() + i * g.block, g.block);
+    cryptArray(plain.data() + 8, g.storedEnd - 8, ec);
+    if (fi->slotSize > g.storedEnd) cryptArray(plain.data() + g.storedEnd, fi->slotSize - g.storedEnd, ec);
 }

@@ -8,7 +8,7 @@ and contributors: <https://github.com/kwsch/PKHeX>, licensed under the GNU GPL v
 |---|---|
 | `source/swish_consts.h` (intro, outro, xorpad) | `PKHeX.Core/Saves/Encryption/SwishCrypto/*` |
 | `source/games.h` (box block keys, BDSP offsets, slot sizes) | `Saves/Access/SaveBlockAccessor8SWSH/8LA/9SV.cs`, `Saves/SAV8BS.cs`, `Saves/Util/SaveUtil.cs` |
-| `source/convert.cpp`, `source/conv_data.*` | `PKM/HOME/GameDataCore.cs`, `GameDataPK8.cs`, `GameDataPB8.cs`, `Game/Locations/LocationsHOME.cs`, `Locations8b.cs`, `Legality/Learnset/Learnset.cs`, `PersonalInfo/*`, `Resources/byte/personal`, `Resources/byte/levelup`, `Moves/MoveInfo8.cs`, `PKM/Util/Experience.cs`, `PKM/Util/Conversion/EntityConverter.cs` |
+| `source/convert.cpp`, `source/conv_data.*` | `PKM/HOME/GameDataCore.cs`, `GameDataPK8.cs`, `GameDataPB8.cs`, `GameDataPA8.cs`, `PKM/PA8.cs`, `PersonalInfo8LA`, `Resources/byte/personal/personal_la`, `Resources/byte/levelup/lvlmove_la.pkl`, `Moves/MoveInfo8a.cs`, `Game/Locations/LocationsHOME.cs`, `Locations8b.cs`, `Legality/Learnset/Learnset.cs`, `PersonalInfo/*`, `Resources/byte/personal`, `Resources/byte/levelup`, `Moves/MoveInfo8.cs`, `PKM/Util/Experience.cs`, `PKM/Util/Conversion/EntityConverter.cs` |
 | `source/pk.cpp` (Pokémon encryption/shuffle) | `PKM/Util/PokeCrypto.cs` |
 | `source/tables.cpp` (species names, Gen 9 tables) | `PKM/Util/Conversion/SpeciesConverter.cs`, species name resources |
 

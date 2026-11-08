@@ -67,13 +67,18 @@ font; no bundled assets are required.
 
 ## Cross-game conversion
 
-The first conversion stage supports Pokémon Sword/Shield to Brilliant
-Diamond/Shining Pearl and vice versa, as long as the species and form are
+Supported pairs: Pokémon Sword/Shield ↔ Brilliant Diamond/Shining Pearl, and
+Pokémon Sword/Shield ↔ Legends: Arceus, as long as the species and form are
 available in the destination game. Following Pokémon HOME rules via PKHeX,
 moves are adjusted to the destination game's learnset and held items are removed.
+Moving between Brilliant Diamond/Shining Pearl and Legends: Arceus directly is not
+supported (go through Sword/Shield). Scarlet/Violet conversion is not supported yet.
 
-Eggs and Nincada/Spinda are rejected. Converted Pokémon are for offline use only
-and do not have a valid HOME tracker. PA8 and PK9 conversion are not yet supported.
+Legends: Arceus specifics: Pokémon carrying the Alpha mark become Alphas, grit
+values start at zero, and move-mastery flags are not guessed (they start empty).
+
+Eggs and Nincada/Spinda (to/from Brilliant Diamond/Shining Pearl) are rejected.
+Converted Pokémon are for offline use only and do not have a valid HOME tracker.
 
 **Going back and forth:** like Pokémon HOME, Monolit keeps each Pokémon's original
 per-game data (moves, ball, met location, ability, game version) in

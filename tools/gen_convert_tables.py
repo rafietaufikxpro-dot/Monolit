@@ -5,8 +5,8 @@
 """Generates source/conv_data.{h,cpp} (SwSh/BDSP conversion tables) from a PKHeX checkout (GPL-3.0).
 
 Usage: tools/gen_convert_tables.py /path/to/PKHeX
-Sources (PKHeX.Core): Resources/byte/personal/personal_{swsh,bdsp}, Resources/byte/levelup/lvlmove_{swsh,bdsp}.pkl,
-Moves/MoveInfo8.cs (PP), PKM/Util/Experience.cs (growth), Legality/Legal.cs (max species).
+Sources (PKHeX.Core): Resources/byte/personal/personal_{swsh,bdsp,la}, Resources/byte/levelup/lvlmove_{swsh,bdsp,la}.pkl,
+Moves/MoveInfo8.cs + MoveInfo8a.cs (PP), PKM/Util/Experience.cs (growth), Legality/Legal.cs (max species).
 Re-run and commit the output when PKHeX data changes; the PKHeX commit is recorded in conv_data.cpp.
 """
 import re, struct, subprocess, sys, os
@@ -24,7 +24,8 @@ def personal(data, size):
     for i in range(len(data) // size):
         d = data[i * size:(i + 1) * size]
         out.append(dict(stats=list(d[0:6]), growth=d[0x15], abil=[u16(d, 0x18), u16(d, 0x1A), u16(d, 0x1C)],
-                        fsi=u16(d, 0x1E), fc=d[0x20], present=(d[0x21] >> 6) & 1))
+                        fsi=u16(d, 0x1E), fc=d[0x20], present=(d[0x21] >> 6) & 1,
+                        h=u16(d, 0x24) if size == 0xB0 else 0, w=u16(d, 0x26) if size == 0xB0 else 0))  # height/weight: Gen 8 layout only
     return out
 
 def learnsets(data, ident, n):
@@ -52,8 +53,8 @@ def emit_game(tag, pers, ls, max_species):
         offs.append((len(mv), len(m))); mv += m; lv += l
     recs = []
     for p, (o, c) in zip(pers, offs):
-        recs.append("{{%s},%d,%d,%d,{%d,%d,%d},%d,%d,%d}" % (",".join(map(str, p["stats"])), p["growth"], p["fc"], p["present"],
-                    *p["abil"], p["fsi"], o, c))
+        recs.append("{{%s},%d,%d,%d,{%d,%d,%d},%d,%d,%d,%d,%d}" % (",".join(map(str, p["stats"])), p["growth"], p["fc"], p["present"],
+                    *p["abil"], p["fsi"], o, c, p["h"], p["w"]))
     s = arr(f"{tag}_LEARN_MOVES", "uint16_t", mv) + arr(f"{tag}_LEARN_LEVELS", "uint8_t", lv)
     s += f"const PersonalRec {tag}_REC[] = {{\n    " + ",\n    ".join(", ".join(recs[i:i + 3]) for i in range(0, len(recs), 3)) + "\n};\n"
     s += f"const GameTable {tag} = {{{tag}_REC, {len(recs)}, {max_species}, {tag}_LEARN_MOVES, {tag}_LEARN_LEVELS}};\n"
@@ -62,14 +63,19 @@ def emit_game(tag, pers, ls, max_species):
 legal = rt("Legality/Legal.cs")
 max_swsh = int(re.search(r"MaxSpeciesID_8_R2\s*=\s*(\d+)", legal).group(1))
 max_bdsp = 493  # Legal.MaxSpeciesID_8b = MaxSpeciesID_4
+max_la = 905    # Legal.MaxSpeciesID_8a = Enamorus
 sw = personal(rd("Resources/byte/personal/personal_swsh"), 0xB0)
 bd = personal(rd("Resources/byte/personal/personal_bdsp"), 0x44)
 lsw = learnsets(rd("Resources/byte/levelup/lvlmove_swsh.pkl"), b"ss", len(sw))
 lbd = learnsets(rd("Resources/byte/levelup/lvlmove_bdsp.pkl"), b"bs", len(bd))
+la = personal(rd("Resources/byte/personal/personal_la"), 0xB0)
+lla = learnsets(rd("Resources/byte/levelup/lvlmove_la.pkl"), b"la", len(la))
 
-mi = rt("Moves/MoveInfo8.cs")
-pp_body = re.search(r"PP =>\s*\[(.*?)\];", mi, re.S).group(1)
-pp = [int(x) for x in re.findall(r"\b\d+\b", re.sub(r"//.*", "", pp_body))]
+def pptable(f):
+    body = re.search(r"PP =>\s*\[(.*?)\];", rt(f), re.S).group(1)
+    return [int(x) for x in re.findall(r"\b\d+\b", re.sub(r"//.*", "", body))]
+pp = pptable("Moves/MoveInfo8.cs")
+ppa = pptable("Moves/MoveInfo8a.cs")
 
 ex = rt("PKM/Util/Experience.cs")
 growth = []
@@ -97,6 +103,7 @@ struct PersonalRec {
     uint16_t formStatsIndex;
     uint32_t learnOff;
     uint16_t learnCount;
+    uint16_t height, weight;  // Gen 8 personal layout (LA uses them for absolute size); 0 elsewhere
 };
 struct GameTable {
     const PersonalRec* rec;
@@ -105,9 +112,11 @@ struct GameTable {
     const uint16_t* learnMoves;
     const uint8_t* learnLevels;
 };
-extern const GameTable SWSH, BDSP;
+extern const GameTable SWSH, BDSP, LA;
 extern const uint8_t PP8[];  // base PP per move id (Gen 8 and 8b share one table)
 extern const int PP8_COUNT;
+extern const uint8_t PP8A[];  // Legends: Arceus base PP
+extern const int PP8A_COUNT;
 constexpr int EXP_LEVELS = %d;
 extern const uint32_t EXP_TABLE[6][%d];
 }  // namespace conv
@@ -115,8 +124,9 @@ extern const uint32_t EXP_TABLE[6][%d];
 open("source/conv_data.h", "w").write(hdr)
 
 body = hdr.split("#pragma once\n")[0] + '#include "conv_data.h"\n\nnamespace conv {\n'
-body += emit_game("SWSH", sw, lsw, max_swsh) + emit_game("BDSP", bd, lbd, max_bdsp)
+body += emit_game("SWSH", sw, lsw, max_swsh) + emit_game("BDSP", bd, lbd, max_bdsp) + emit_game("LA", la, lla, max_la)
 body += arr("PP8", "uint8_t", pp, 20) + f"const int PP8_COUNT = {len(pp)};\n"
+body += arr("PP8A", "uint8_t", ppa, 20) + f"const int PP8A_COUNT = {len(ppa)};\n"
 body += "const uint32_t EXP_TABLE[6][%d] = {\n" % len(growth[0]) + ",\n".join("    {" + ",".join(map(str, g)) + "}" for g in growth) + "\n};\n}  // namespace conv\n"
 open("source/conv_data.cpp", "w").write(body)
-print("species max swsh/bdsp:", max_swsh, max_bdsp, "| personal:", len(sw), len(bd), "| learn:", len(lsw), len(lbd), "| pp:", len(pp), "| exp len:", len(growth[0]))
+print("species max swsh/bdsp/la:", max_swsh, max_bdsp, max_la, "| la personal/learn:", len(la), len(lla), "| pp8a:", len(ppa), "| personal:", len(sw), len(bd), "| learn:", len(lsw), len(lbd), "| pp:", len(pp), "| exp len:", len(growth[0]))

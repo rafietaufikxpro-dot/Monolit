@@ -16,6 +16,7 @@ struct PersonalRec {
     uint16_t formStatsIndex;
     uint32_t learnOff;
     uint16_t learnCount;
+    uint16_t height, weight;  // Gen 8 personal layout (LA uses them for absolute size); 0 elsewhere
 };
 struct GameTable {
     const PersonalRec* rec;
@@ -24,9 +25,11 @@ struct GameTable {
     const uint16_t* learnMoves;
     const uint8_t* learnLevels;
 };
-extern const GameTable SWSH, BDSP;
+extern const GameTable SWSH, BDSP, LA;
 extern const uint8_t PP8[];  // base PP per move id (Gen 8 and 8b share one table)
 extern const int PP8_COUNT;
+extern const uint8_t PP8A[];  // Legends: Arceus base PP
+extern const int PP8A_COUNT;
 constexpr int EXP_LEVELS = 100;
 extern const uint32_t EXP_TABLE[6][100];
 }  // namespace conv

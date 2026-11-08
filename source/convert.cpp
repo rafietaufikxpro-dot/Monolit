@@ -9,6 +9,7 @@
 // data: ability, ball, locations, move reset), HOME/LocationsHOME.cs, Locations8b.cs, PKM.ResetPartyStats.
 #include "convert.h"
 
+#include <cmath>
 #include <cstring>
 
 #include "conv_data.h"
@@ -55,7 +56,7 @@ enum : uint16_t { SHLG = 59994, SWFR, SHVL, SWSL, SHSP, SWBD, SWLA, SWSH_EGG = 6
 const uint16_t DEFAULT_8B_NONE = 65535, TRANSFER_PLACEHOLDER_0 = 658;
 const uint8_t BALL_BEAST = 26, BALL_POKE = 4;
 
-const GameTable& tableFor(Fmt f) { return f == FMT_PK8 ? SWSH : BDSP; }
+const GameTable& tableFor(Fmt f) { return f == FMT_PK8 ? SWSH : (f == FMT_PA8 ? LA : BDSP); }
 
 bool hasForm(const PersonalRec& r, uint8_t form) { return form != 0 && r.formStatsIndex > 0 && form < r.formCount; }
 
@@ -128,11 +129,12 @@ const char* describe(Result r) {
 }
 
 bool supported(Fmt from, Fmt to) {
-    return (from == FMT_PK8 && to == FMT_PB8) || (from == FMT_PB8 && to == FMT_PK8);
+    return (from == FMT_PK8 && to == FMT_PB8) || (from == FMT_PB8 && to == FMT_PK8) || (from == FMT_PK8 && to == FMT_PA8) ||
+           (from == FMT_PA8 && to == FMT_PK8);
 }
 
 bool presentInGame(Fmt fmt, uint16_t species, uint8_t form) {
-    if (fmt != FMT_PK8 && fmt != FMT_PB8) return false;
+    if (fmt != FMT_PK8 && fmt != FMT_PB8 && fmt != FMT_PA8) return false;
     const GameTable& t = tableFor(fmt);
     if (species == 0 || species > t.maxSpecies) return false;
     const PersonalRec& r = t.rec[species];
@@ -142,10 +144,240 @@ bool presentInGame(Fmt fmt, uint16_t species, uint8_t form) {
     return idx < t.count && t.rec[idx].present != 0;
 }
 
+
+// ---------------------------------------------------------------- PK8 <-> PA8 (Sword/Shield <-> Legends: Arceus)
+namespace {
+// Shared core fields: offset in the PK8/PB8 layout (G8PKM), offset in PA8, length.
+struct Map { int g8, pa8, len; };
+const Map PA8_MAP[] = {
+    {0x00, 0x00, 4},    // encryption constant
+    {0x08, 0x08, 2},    // species
+    {0x0C, 0x0C, 4},    // TID / SID
+    {0x10, 0x10, 4},    // EXP
+    {0x18, 0x18, 2},    // markings
+    {0x1C, 0x1C, 4},    // PID
+    {0x20, 0x20, 2},    // nature, stat nature
+    {0x24, 0x24, 1},    // form
+    {0x26, 0x26, 12},   // EVs + contest stats
+    {0x50, 0x50, 2},    // height / weight scalar
+    {0x58, 0x60, 26},   // nickname
+    {0x8C, 0x94, 4},    // IVs, egg flag, nicknamed flag
+    {0xA8, 0xB8, 26},   // handling trainer name
+    {0xC2, 0xD2, 3},    // HT gender, HT language, current handler
+    {0xC8, 0xD8, 6},    // HT friendship + memory
+    {0xDE, 0xEE, 2},    // version, battle version
+    {0xE2, 0xF2, 1},    // language
+    {0xE4, 0xF4, 5},    // form argument, affixed ribbon
+    {0xF8, 0x110, 26},  // original trainer name
+    {0x112, 0x12A, 7},  // OT friendship + memory
+    {0x119, 0x131, 6},  // egg / met dates
+    {0x125, 0x13D, 2},  // met level + OT gender, hyper training
+    {0x135, 0x14D, 8},  // HOME tracker
+};
+// Ribbon bytes 0x34..0x47 sit at the same offsets in both layouts; masks as in the PK8/PB8 path.
+const uint8_t RIB_MASK_G8[0x14] = {0xFF, 0xFF, 0xFF, 0xFF, 0x9F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+                                   0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x00};
+const uint8_t RIB_MASK_PA8[0x14] = {0xFF, 0xFF, 0xFF, 0xFF, 0x9F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+                                    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x00};
+
+// PokeSizeUtil / PA8.GetScalarPercent: plain float math (no fused multiply-add), exactly as the game computes it.
+float scalarPercent(uint8_t scalar) {
+    volatile float percent = scalar / 255.0f;
+    volatile float scaled = percent * 0.40000004f;
+    return scaled + 0.8f;
+}
+float heightAbs(const PersonalRec& p, uint8_t hs) { return (float)p.height * scalarPercent(hs); }
+float weightAbs(const PersonalRec& p, uint8_t hs, uint8_t ws) {
+    volatile float both = scalarPercent(hs) * scalarPercent(ws);
+    return (float)p.weight * both;
+}
+void wrF(uint8_t* p, float f) { memcpy(p, &f, 4); }
+
+// PA8.LoadStats HP: GetGanbaruStat + GetStatHp (floats as in the game; only the HP value is needed for the box slot).
+int laHpMax(int base, int iv, int gv, int level) {
+    static const uint8_t MUL[11] = {0, 2, 3, 4, 7, 8, 9, 14, 15, 16, 25};
+    const int bias = iv >= 31 ? 3 : (iv >= 26 ? 2 : (iv >= 20 ? 1 : 0));
+    const int mul = MUL[gv + bias > 10 ? 10 : gv + bias];
+    const double step1 = std::sqrt((double)base) * mul;
+    volatile float sum = (float)step1 + (float)level;
+    const float result = sum / 2.5f;
+    const int ganbaru = (int)std::round((double)result);
+    volatile float lv = level / 100.0f;
+    volatile float t = lv + 1.0f;
+    volatile float t2 = t * (float)base;
+    volatile float t3 = t2 + (float)level;
+    return ganbaru + (int)t3;
+}
+
+// Stats shown for a PK8/PB8 slot (same formula as the existing G8 path).
+}  // namespace
+
+static Result convertPA8(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide, bool* restored) {
+    const bool toLA = (to == FMT_PA8);
+    std::vector<uint8_t> s;
+    if (!pkDecryptSlot(from, srcSlot, s)) return EMPTY;
+    const FmtInfo* fi = fmtInfo(to);
+    if (!fi) return BAD_DATA;
+    // offsets in the SOURCE layout / DESTINATION layout
+    const int sIV = toLA ? 0x8C : 0x94, sVer = toLA ? 0xDE : 0xEE, sMet = toLA ? 0x122 : 0x13A, sEgg = toLA ? 0x120 : 0x138, sBall = toLA ? 0x124 : 0x137;
+    const int dVer = toLA ? 0xEE : 0xDE, dMet = toLA ? 0x13A : 0x122, dEgg = toLA ? 0x138 : 0x120, dBall = toLA ? 0x137 : 0x124;
+
+    const uint16_t species = rd16(&s[0x08]);
+    const uint8_t form = s[0x24];
+    if (species == 0 || rd32(&s[0]) == 0) return BAD_DATA;
+    if ((rd32(&s[sIV]) >> 30) & 1) return EGG;
+    if (!presentInGame(to, species, form)) return NOT_IN_GAME;
+    const uint16_t srcMet = rd16(&s[sMet]), srcEgg = rd16(&s[sEgg]);
+    const bool magic = from == FMT_PK8 && srcMet >= SHLG && srcMet <= SWLA;
+
+    std::vector<uint8_t> S;  // stored original of the destination game (HOME keeps per-game data)
+    bool haveSide = false;
+    if (origSide && pkDecryptSlot(to, origSide, S) && S.size() == (size_t)fi->slotSize && rd32(&S[0]) == rd32(&s[0]) &&
+        rd32(&S[0x1C]) == rd32(&s[0x1C]) && rd16(&S[0x08]) == species && S[0x24] == form) {
+        bool remap;
+        const uint16_t expect = remappedVersion(S[dVer], remap);
+        haveSide = (S[dVer] == s[sVer]) || (toLA && expect == s[sVer]);
+    }
+    if (magic && !haveSide) return FOREIGN_ORIGIN;
+    if (magic && srcMet != SWLA) return FOREIGN_ORIGIN;  // only Legends: Arceus origins can come back to PA8
+
+    const GameTable& t = tableFor(to);
+    const int idx = formIndex(t, species, form);
+    const PersonalRec& pr = t.rec[idx];
+    std::vector<uint8_t> d(fi->slotSize, 0);
+
+    // 1) shared core data
+    for (const Map& m : PA8_MAP) {
+        if (toLA) memcpy(&d[m.pa8], &s[m.g8], m.len);
+        else memcpy(&d[m.g8], &s[m.pa8], m.len);
+    }
+    const uint8_t* rmask = toLA ? RIB_MASK_G8 : RIB_MASK_PA8;
+    for (int o = 0x34; o < 0x48; o++) d[o] = s[o] & rmask[o - 0x34];
+    d[0x3C] = s[0x3C]; d[0x3D] = s[0x3D];
+    if (d[0x3C]) d[0x38] |= 0x20;
+    if (d[0x3D]) d[0x38] |= 0x40;
+    d[0x16] |= s[0x16] & 0x08;   // favorite flag
+    d[0x22] = s[0x22] & 0x0D;    // fateful encounter + gender
+
+    // Legends: Arceus keeps its own size byte; an Alpha Pokemon is shown as the Alpha mark and 255/255 in HOME.
+    const bool srcAlpha = !toLA && (s[0x16] & 0x20);
+    if (!toLA) d[0x50] = srcAlpha ? 255 : s[0x52];   // PKH.HeightScalar is overwritten by PA8's Scale on the way in
+    if (srcAlpha) d[0x45] |= 0x08;
+    if ((d[0x45] >> 3) & 1) {
+        d[0x50] = d[0x51] = 255;
+    } else if (d[0x50] == 0 && d[0x51] == 0) {
+        uint32_t x = (rd32(&d[0x00]) ^ (rd32(&d[0x1C]) * 2654435761u)) | 1u;
+        auto rnd = [&x](uint32_t n) { x ^= x << 13; x ^= x >> 17; x ^= x << 5; return x % n; };
+        d[0x50] = (uint8_t)(rnd(0x81) + rnd(0x80));
+        d[0x51] = (uint8_t)(rnd(0x81) + rnd(0x80));
+    }
+
+    const uint8_t level = levelFromExp(rd32(&s[0x10]), pr.growth);
+    if (haveSide) {
+        // 2) restore the destination game's own data from the earlier visit
+        auto isCore = [&](int o) {
+            if (o >= 0x34 && o < 0x48) return true;
+            for (const Map& m : PA8_MAP) {
+                const int off = toLA ? m.pa8 : m.g8;
+                if (o >= off && o < off + m.len) return true;
+            }
+            return false;
+        };
+        const int hpOff = toLA ? 0x92 : 0x8A, statusOff = toLA ? 0x9C : 0x94, end = toLA ? 0x168 : 0x148;
+        for (int o = 0x08; o < end; o++) {
+            if (isCore(o) || o == 0x0A || o == 0x0B || o == hpOff || o == hpOff + 1 || (o >= statusOff && o < statusOff + 4) || o == 0x16 || o == 0x22) continue;
+            d[o] = S[o];
+        }
+        d[0x16] = (uint8_t)((S[0x16] & (toLA ? 0x77 : 0x17)) | (s[0x16] & 0x08));
+        d[dVer] = S[dVer];
+        if (restored) *restored = true;
+    } else {
+        // 2) per-game data rebuilt for the destination (PKHeX GameDataPA8 / GameDataPK8 InitializeFrom + CopyTo)
+        const uint8_t abilityNumber = s[0x16] & 7;
+        int ai = abilityNumber >> 1;
+        if (ai >= 3) ai = 0;
+        wr16(&d[0x14], pr.abil[ai]);
+        d[0x16] = (uint8_t)((d[0x16] & ~7) | abilityNumber);
+        d[0x32] = s[0x32];   // pokerus state
+        const uint8_t ball = s[sBall];
+        uint16_t met = srcMet, egg = srcEgg;
+        if (toLA) {
+            // Legends: Arceus origins must use a legend ball; other origins keep theirs
+            d[dBall] = (s[sVer] == V_PLA && !(ball >= 28 && ball <= 37)) ? 28 : ball;
+            d[0x52] = d[0x50];
+        } else {
+            d[dBall] = ball > BALL_BEAST ? BALL_POKE : ball;
+            bool remap;
+            const uint16_t nv = remappedVersion(s[sVer], remap);
+            if (remap) {
+                d[dVer] = (uint8_t)nv;
+                met = magicMet(s[sVer]);
+                egg = egg == 0 ? (uint16_t)0 : (egg > SWLA ? (uint16_t)SWSH_EGG : magicMet(s[sVer]));
+            }
+        }
+        wr16(&d[dMet], met);
+        wr16(&d[dEgg], egg);
+
+        // 3) moves reset to the destination learnset at this level; relearn moves and PP Ups are cleared
+        uint16_t mv[4] = {0, 0, 0, 0};
+        encounterMoves(t, idx, level, mv);
+        const int mOff = toLA ? 0x54 : 0x72, ppOff = toLA ? 0x5C : 0x7A;
+        for (int i = 0; i < 4; i++) {
+            wr16(&d[mOff + i * 2], mv[i]);
+            const uint8_t* ppTable = toLA ? PP8A : PP8;
+            const int ppCount = toLA ? PP8A_COUNT : PP8_COUNT;
+            d[ppOff + i] = mv[i] < ppCount ? ppTable[mv[i]] : 0;
+        }
+    }
+
+    // The Alpha mark only exists on Legends: Arceus Alphas, so a Pokemon carrying it is an Alpha there (PKHeX infers the same).
+    if (toLA && ((d[0x45] >> 3) & 1)) d[0x16] |= 0x20;
+
+    if (toLA) {
+        // absolute size follows the scalars (recalculated from the Legends: Arceus personal data, never copied)
+        if (!haveSide) {
+            wrF(&d[0xAC], heightAbs(pr, d[0x50]));
+            wrF(&d[0xB0], weightAbs(pr, d[0x50], d[0x51]));
+        }
+        // current HP = max HP (the box slot has no stat tail)
+        const uint8_t ht = d[0x13E];
+        const int iv32 = (int)rd32(&d[0x94]);
+        const int iv = ((ht >> 0) & 1) ? 31 : (iv32 & 31);
+        wr16(&d[0x92], (uint16_t)laHpMax(pr.stats[0], iv, d[0xA4], level));
+    } else {
+        // party stats as in the PK8/PB8 path
+        uint16_t st[6];
+        const uint8_t ht = d[0x126];
+        const int iv32 = (int)rd32(&d[0x8C]);
+        const int ivs[6] = {iv32 & 31, (iv32 >> 5) & 31, (iv32 >> 10) & 31, (iv32 >> 15) & 31, (iv32 >> 20) & 31, (iv32 >> 25) & 31};
+        const int ev[6] = {d[0x26], d[0x27], d[0x28], d[0x29], d[0x2A], d[0x2B]};
+        const int htBit[6] = {0, 1, 2, 5, 3, 4};
+        for (int i = 0; i < 6; i++) {
+            int iv = ((ht >> htBit[i]) & 1) ? 31 : ivs[i];
+            int base = pr.stats[i];
+            st[i] = (uint16_t)(i == 0 ? (base == 1 ? 1 : ((iv + 2 * base + ev[i] / 4 + 100) * level / 100) + 10)
+                                      : ((iv + 2 * base + ev[i] / 4) * level / 100) + 5);
+        }
+        const int nature = d[0x21];
+        if (nature < 25 && nature / 5 != nature % 5) {
+            st[nature / 5 + 1] = (uint16_t)(st[nature / 5 + 1] * 11 / 10);
+            st[nature % 5 + 1] = (uint16_t)(st[nature % 5 + 1] * 9 / 10);
+        }
+        d[0x148] = level;
+        wr16(&d[0x8A], st[0]);
+        for (int i = 0; i < 6; i++) wr16(&d[0x14A + i * 2], st[i]);
+    }
+
+    pkEncryptSlot(to, d);
+    out = d;
+    return OK;
+}
+
 Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide, bool* restored) {
     if (restored) *restored = false;
     if (from == to) return SAME_FORMAT;
     if (!supported(from, to)) return UNSUPPORTED_FORMAT;
+    if (from == FMT_PA8 || to == FMT_PA8) return convertPA8(from, to, srcSlot, out, origSide, restored);
     std::vector<uint8_t> s;
     if (!pkDecryptSlot(from, srcSlot, s)) return EMPTY;
     const FmtInfo* fi = fmtInfo(to);

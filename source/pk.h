@@ -22,8 +22,8 @@ struct PkSummary {
 PkSummary pkSummarize(Fmt fmt, const uint8_t* slot);
 bool pkSlotPresent(const uint8_t* slot);
 
-// Slot-level crypto for Gen 8 boxes (PK8/PB8): full slotSize buffer, un-shuffled with the party tail decrypted.
-// pkDecryptSlot: returns false for formats other than PK8/PB8 or empty slots.
+// Slot-level crypto for Gen 8 boxes (PK8/PB8/PA8): full slotSize buffer, un-shuffled with the party tail decrypted.
+// pkDecryptSlot: returns false for formats other than PK8/PB8/PA8 or empty slots.
 bool pkDecryptSlot(Fmt fmt, const uint8_t* slot, std::vector<uint8_t>& plain);
 // pkEncryptSlot: recomputes the checksum, shuffles and encrypts `plain` (same layout as pkDecryptSlot output).
 void pkEncryptSlot(Fmt fmt, std::vector<uint8_t>& plain);

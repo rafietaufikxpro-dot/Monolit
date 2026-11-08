@@ -53,6 +53,36 @@ static bool checksumOk(const std::vector<uint8_t>& p) {
     return sum == r16(p, 6);
 }
 
+
+// Builds an encrypted synthetic Legends: Arceus slot (PA8 layout, 0x168 bytes, no stat tail).
+static std::vector<uint8_t> makeLA(uint16_t species, uint8_t level, uint8_t version, uint16_t met, uint8_t ball, bool alpha) {
+    std::vector<uint8_t> p(0x168, 0);
+    w32(p, 0, 0xB1C2D3E4u);
+    w16(p, 0x08, species);
+    w32(p, 0x0C, 0x0BADF00Du);
+    w32(p, 0x10, conv::EXP_TABLE[conv::LA.rec[species].growth][level - 1]);
+    p[0x16] = (uint8_t)(2 | (alpha ? 0x20 : 0));         // ability number 2, Alpha flag
+    w32(p, 0x1C, 0xFEEDFACEu);
+    p[0x20] = p[0x21] = 3;
+    w32(p, 0x94, 31u | (30u << 5) | (29u << 10) | (28u << 15) | (27u << 20) | (26u << 25));
+    const char16_t nick[] = u"Hisui";
+    for (int i = 0; i < 5; i++) w16(p, 0x60 + i * 2, nick[i]);
+    p[0xEE] = version; p[0xF2] = 2;
+    w16(p, 0x13A, met);
+    p[0x137] = ball;
+    p[0x50] = 77; p[0x51] = 88; p[0x52] = alpha ? 255 : 99;
+    w16(p, 0x54, 85); w16(p, 0x56, 98); w16(p, 0x58, 21); w16(p, 0x5A, 129);
+    p[0x5C] = 15; p[0x5D] = 30; p[0x5E] = 20; p[0x5F] = 10;
+    for (int i = 0; i < 6; i++) p[0xA4 + i] = (uint8_t)(i + 1);   // grit values
+    pkEncryptSlot(FMT_PA8, p);
+    return p;
+}
+static bool checksumLA(const std::vector<uint8_t>& p) {
+    uint16_t sum = 0;
+    for (int i = 8; i < 0x168; i += 2) sum = (uint16_t)(sum + r16(p, i));
+    return sum == r16(p, 6);
+}
+
 int main() {
     // crypto round trip
     {
@@ -135,7 +165,7 @@ int main() {
         std::vector<uint8_t> empty(0x158, 0);
         CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, empty.data(), out) == conv::EMPTY);
         CHECK(conv::convertSlot(FMT_PK8, FMT_PK8, grookey.data(), out) == conv::SAME_FORMAT);
-        CHECK(conv::convertSlot(FMT_PK8, FMT_PA8, grookey.data(), out) == conv::UNSUPPORTED_FORMAT);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PK9, grookey.data(), out) == conv::UNSUPPORTED_FORMAT);
     }
     // round trip keeps shared data
     {
@@ -200,6 +230,61 @@ int main() {
         // other origins (e.g. Legends: Arceus placeholder) are still refused even if data were provided
         auto la = make(FMT_PK8, 25, 0, 10, 44, 60000);
         CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, la.data(), back, orig.data(), &restored) == conv::FOREIGN_ORIGIN);
+    }
+
+    // ---- Sword/Shield <-> Legends: Arceus (PK8 <-> PA8)
+    {
+        auto src = make(FMT_PK8, 25, 0, 25, 44, 12);
+        std::vector<uint8_t> out;
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PA8, src.data(), out) == conv::OK);
+        auto d = plain(FMT_PA8, out), s0 = plain(FMT_PK8, src);
+        CHECK(d.size() == 0x168 && checksumLA(d));
+        CHECK(memcmp(&d[0], &s0[0], 4) == 0 && memcmp(&d[0x1C], &s0[0x1C], 4) == 0 && memcmp(&d[0x94], &s0[0x8C], 4) == 0);   // EC, PID, IVs
+        CHECK(memcmp(&d[0x60], &s0[0x58], 26) == 0);                                      // nickname (different offset)
+        CHECK(r16(d, 0x14) == conv::LA.rec[25].abil[1] && (d[0x16] & 7) == 2 && !(d[0x16] & 0x60));   // ability, no Alpha/Noble
+        CHECK(d[0xEE] == 44 && r16(d, 0x13A) == 12 && d[0x137] == 4);                    // version, location, ball kept
+        CHECK(d[0x52] == d[0x50] && d[0xA4] == 0 && d[0xA9] == 0);                        // scale follows height scalar, no grit values
+        CHECK(r16(d, 0x54) != 0 && r16(d, 0x8A) == 0 && r16(d, 0x0A) == 0);              // moves reset, relearn empty, no held item
+        CHECK(d[0x5C] == conv::PP8A[r16(d, 0x54)]);
+        const auto& r = conv::LA.rec[25];
+        for (int m = 0; m < 4; m++) {
+            uint16_t mv = r16(d, 0x54 + m * 2);
+            if (!mv) continue;
+            bool ok = false;
+            for (int i = 0; i < r.learnCount; i++)
+                if (conv::LA.learnMoves[r.learnOff + i] == mv && conv::LA.learnLevels[r.learnOff + i] <= 25) ok = true;
+            CHECK(ok);
+        }
+        CHECK(r16(d, 0x92) > 0);                                                          // HP filled in
+    }
+    {
+        // Legends: Arceus alpha -> Sword/Shield -> back, with and without the stored original
+        auto orig = makeLA(25, 30, 47 /*PLA*/, 600, 30 /*a legend ball*/, true);
+        std::vector<uint8_t> sw, back;
+        CHECK(conv::convertSlot(FMT_PA8, FMT_PK8, orig.data(), sw) == conv::OK);
+        auto d = plain(FMT_PK8, sw);
+        CHECK(d[0xDE] == 44 && r16(d, 0x122) == 60000 && d[0x124] == 4);                 // PLA -> SW, placeholder location, ball sanitized
+        CHECK(d[0x50] == 255 && d[0x51] == 255 && ((d[0x45] >> 3) & 1));                 // Alpha: mark + max size
+        CHECK(r16(d, 0x72) != 0 && checksumOk(d));
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PA8, sw.data(), back) == conv::FOREIGN_ORIGIN);
+        bool restored = false;
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PA8, sw.data(), back, orig.data(), &restored) == conv::OK && restored);
+        auto a = plain(FMT_PA8, orig), b = plain(FMT_PA8, back);
+        CHECK(b[0xEE] == 47 && r16(b, 0x13A) == 600 && b[0x137] == 30);                  // version, location, ball come back
+        CHECK(memcmp(&a[0x54], &b[0x54], 0x10) == 0);                                    // original moves and PP
+        CHECK(memcmp(&a[0xA4], &b[0xA4], 6) == 0 && (b[0x16] & 0x20));                  // grit values, Alpha
+        CHECK(memcmp(&a[0x1C], &b[0x1C], 4) == 0 && checksumLA(b));
+        // another origin's placeholder is never accepted for PA8
+        auto sh = make(FMT_PK8, 25, 0, 20, 44, 59999);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PA8, sh.data(), back, orig.data(), &restored) == conv::FOREIGN_ORIGIN);
+    }
+    {
+        std::vector<uint8_t> out;
+        auto grookey = make(FMT_PK8, 810, 0, 10, 44, 12);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PA8, grookey.data(), out) == conv::NOT_IN_GAME);   // not in Hisui
+        auto bdsp = make(FMT_PB8, 25, 0, 20, 48, 12);
+        CHECK(conv::convertSlot(FMT_PB8, FMT_PA8, bdsp.data(), out) == conv::UNSUPPORTED_FORMAT);  // BDSP <-> LA not implemented
+        CHECK(conv::supported(FMT_PK8, FMT_PA8) && conv::supported(FMT_PA8, FMT_PK8) && !conv::supported(FMT_PA8, FMT_PB8));
     }
     // ---- SideStore file
     {

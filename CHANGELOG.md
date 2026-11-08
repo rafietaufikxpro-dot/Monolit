@@ -26,6 +26,7 @@ Hardening release. **Not yet tested on real hardware.**
 - Initial version: copy/move/withdraw between saves and an offline bank for SwSh, BDSP, LA, SV.
 
 ## Unreleased
+- Cross-game conversion phase 2: Sword/Shield <-> Legends: Arceus (PK8 <-> PA8). Alpha mark -> Alpha, grit values start at 0, move mastery not guessed. Round trips through `sides.dat` work for PA8 too. Slot crypto now handles PA8 (0x58-byte blocks). Golden-tested against PKHeX (2000 random cases per direction) apart from legality-derived relearn/mastery data.
 - Round trips SwSh <-> BD/SP: original per-game data of converted Pokémon is kept in `sides.dat` and restored when the Pokémon returns to that game (HOME-like). A Pokémon with a HOME placeholder location and no stored original data is still refused. New `sidedata.cpp/.h`, tests in `test/test_convert.cpp`.
 - Author/version now come from one place (`APP_AUTHOR`/`APP_VERSION` in the Makefile): shown in the homebrew menu via the `.nacp` and in the app menu ("Monolit vX by <author>"). The `.nacp` is now rebuilt whenever the Makefile changes (before, a stale `.nacp` could keep showing "Unspecified Author").
 - Renamed the project from PokeBank to Monolit (trademark caution). Data folder is now `sdmc:/switch/Monolit` and the bank file `monolit.bank`; an existing `sdmc:/switch/PokeBank` folder is moved automatically on first start (nothing is deleted).

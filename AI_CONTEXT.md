@@ -116,7 +116,7 @@ BDSP and Legends: Arceus have no DLC (always 0). The UI only **warns** when a Po
 - Display only: nickname UTF-16LE (13 chars) at `0x58` (`0x60` for PA8); level byte at `0x148` (not present for PA8 box slots).
 - **The app never modifies Pokémon contents.** It only moves opaque slot bytes.
 
-### 4.6 Conversion (PK8 <-> PB8) — `source/convert.cpp`, `source/conv_data.*` (generated)
+### 4.6 Conversion (PK8 <-> PB8, PK8 <-> PA8) — `source/convert.cpp`, `source/conv_data.*` (generated)
 HOME model: shared "core" fields are copied (EC, PID, IVs/EVs, nature, ribbons, OT/HT, tracker as-is...), per-game data is rebuilt:
 ability from the target personal table by ability number, moves reset to the target learnset at the current level (PP from the
 Gen 8 PP table, PP Ups 0), relearn cleared, ball kept (PK8 target: > Beast -> Poke Ball), locations mapped (PB8 local <-> mainline,
@@ -128,7 +128,12 @@ Round trips (`source/sidedata.*`, file `sdmc:/switch/Monolit/sides.dat`, magic `
 byte (moves, PP, relearn, ability, ball, locations, Dynamax/TR data...) plus the original game version from that slot; shared fields keep their current
 values; held item stays removed. PKHeX itself does NOT do this (it would keep the SW/SH version and the 59999/59998 placeholder inside a BD/SP save), so this
 path is not covered by the golden test: it is covered by `test/test_convert.cpp`. A damaged `sides.dat` is replaced by `.bak` or renamed `.corrupt`; it never blocks the app.
-Verified byte-for-byte against PKHeX for 6000 synthetic cases (`tools/GOLDEN.md`); only known difference: PKHeX's legality-based relearn guess.
+PA8 (Legends: Arceus; box slot 0x168, no stat tail, blocks 0x58): core fields are copied through `PA8_MAP` (G8 offset -> PA8 offset); per-game data: ability from the LA
+personal table, moves from `lvlmove_la` + `PP8A`, scale = height scalar, grit values 0, absolute height/weight recomputed (plain float math, no FMA), HP current = LA
+formula (Ganbaru), Alpha mark -> IsAlpha. PA8 -> PK8: Scale (or 255 for an Alpha) becomes the height scalar, Alpha adds the mark, PLA origin -> SW + placeholder
+location 60000. BD/SP <-> LA is intentionally not wired up.
+Verified byte-for-byte against PKHeX for thousands of synthetic cases per direction (`tools/GOLDEN.md`); known differences are the legality-engine guesses
+PKHeX adds (relearn moves, Legends: Arceus move-mastery flags), which Monolit deliberately leaves empty.
 Not covered: real-device behaviour, legality, HOME service acceptance.
 
 ## 5. Safety invariants — do not break these
