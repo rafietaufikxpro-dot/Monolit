@@ -1,0 +1,55 @@
+# Monolit 3DS - Makefile for devkitARM (3DS target).
+# Requires $DEVKITPRO and $DEVKITARM set.
+# Build: make -f Makefile.3ds    → Monolit3DS.3dsx
+#        make                   → Switch .nro (existing Makefile)
+
+DEVKITARM ?= $(DEVKITPRO)/devkitARM
+DEVKITPRO ?= /c/devkitpro
+
+TARGET := Monolit3DS
+BUILD := build3ds
+SOURCE := source
+SOURCE3DS := source/3ds
+
+ARCH := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -D__3DS__
+CFLAGS := -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable $(ARCH) -std=c++17 -O2 -D__3DS__
+CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
+
+LIBS := -lcitro3d -lcitro2d -lctru -lm
+
+CPREFIX := arm-none-eabi-
+CC := $(CPREFIX)gcc
+CXX := $(CPREFIX)g++
+RM := rm -f
+
+SRCS := $(wildcard $(SOURCE3DS)/*.cpp) \
+        $(SOURCE)/bank3ds.cpp \
+        $(SOURCE)/pk6.cpp \
+        $(SOURCE)/pk7.cpp \
+        $(SOURCE)/sav6.cpp \
+        $(SOURCE)/sav7.cpp \
+        $(SOURCE)/hash.cpp
+
+OBJS := $(SRCS:.cpp=.o)
+
+.PHONY: all clean
+
+all: $(BUILD)/$(TARGET).3dsx
+
+$(BUILD):
+	mkdir -p $(BUILD)
+
+$(BUILD)/%.o: $(SOURCE3DS)/%.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -I$(SOURCE) -I$(SOURCE3DS) -c $< -o $@
+
+$(BUILD)/%.o: $(SOURCE)/%.cpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) -I$(SOURCE) -I$(SOURCE3DS) -c $< -o $@
+
+$(BUILD)/$(TARGET).3dsx: $(OBJS)
+	$(CPREFIX)g++ -Wl,-Map,$(@:.3dsx=.map) $(ARCH) -o $(@:.3dsx=.elf) $^ $(LIBS)
+	$(CPREFIX)objcopy -O binary $(@:.3dsx=.elf) $(@:.3dsx.bin)
+	@echo "Built $@"
+	@elf23dsx $(@:.3dsx=.elf) $@ 2>/dev/null || cp $(@:.3dsx=.elf) $@ 2>/dev/null || true
+
+clean:
+	$(RM) -r $(BUILD)

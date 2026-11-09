@@ -9,7 +9,7 @@
 #include <cstdint>
 
 // Pokemon data formats. A bank entry can only be put back into a save of the same format.
-enum Fmt : uint8_t { FMT_NONE = 0, FMT_PK8 = 1, FMT_PB8 = 2, FMT_PA8 = 3, FMT_PK9 = 4 };
+enum Fmt : uint8_t { FMT_NONE = 0, FMT_PK6 = 1, FMT_PK7 = 2, FMT_PK8 = 3, FMT_PB8 = 4, FMT_PA8 = 5, FMT_PK9 = 6 };
 
 struct FmtInfo {
     Fmt fmt;
@@ -22,6 +22,8 @@ struct FmtInfo {
 
 inline const FmtInfo* fmtInfo(Fmt f) {
     static const FmtInfo t[] = {
+        {FMT_PK6, "PK6", 0xE8, 0x40, -1, false},
+        {FMT_PK7, "PK7", 0xE8, 0x40, -1, false},
         {FMT_PK8, "PK8 (Sword/Shield)",      0x158, 0x58, 0x148, false},
         {FMT_PB8, "PB8 (BD/SP)",             0x158, 0x58, 0x148, false},
         {FMT_PA8, "PA8 (Legends: Arceus)",   0x168, 0x60, -1,    false},
@@ -31,7 +33,7 @@ inline const FmtInfo* fmtInfo(Fmt f) {
     return nullptr;
 }
 
-enum Family { FAM_SCBLOCK, FAM_BDSP };
+enum Family { FAM_SCBLOCK, FAM_BDSP, FAM_SAV6, FAM_SAV7 };
 
 struct GameDef {
     const char* name;
@@ -40,21 +42,92 @@ struct GameDef {
     Family family;
     Fmt fmt;
     uint32_t boxKey;       // SCBlock key of the box block (FAM_SCBLOCK)
-    uint32_t boxOffset;    // fixed offset of box area (FAM_BDSP)
+    uint32_t boxOffset;    // fixed offset of box area (FAM_BDSP / Gen 6/7)
     int boxes;
     int perBox;
+    size_t saveSize;       // expected save file size, 0 = unknown
+    const uint32_t* chkofs;  // checksum block offset table (Gen 6/7 only)
+    const uint32_t* chklen;  // checksum block length table (Gen 6/7 only)
+    int chkCount;           // number of checksum blocks
 };
 
+// ---------------- Gen 6 checksum tables (ccitt16, from PKSM-Core SavXY.hpp / SavORAS.hpp) ----------------
+
+static const uint32_t CHK_XY[55] = {
+    0x00000,0x00400,0x01000,0x01200,0x01400,0x01600,0x01800,0x01A00,0x01C00,0x01E00,0x02000,
+    0x04200,0x04400,0x04A00,0x05000,0x0A000,0x0F000,0x14000,0x14200,0x14A00,0x15000,0x15800,
+    0x16000,0x16200,0x16400,0x16A00,0x16C00,0x17000,0x17800,0x17A00,0x17C00,0x17E00,0x18000,
+    0x18200,0x18A00,0x19000,0x19400,0x1B000,0x1B200,0x1B400,0x1B800,0x1BC00,0x1D800,0x1DC00,
+    0x1E400,0x1E800,0x1F200,0x1F600,0x1FE00,0x20C00,0x20E00,0x21000,0x21E00,0x22600,0x57200};
+
+static const uint32_t CHK_XY_LEN[55] = {
+    0x002C8,0x00B88,0x0002C,0x00038,0x00150,0x00004,0x00008,0x001C0,0x000BE,0x00024,0x02100,
+    0x00140,0x00440,0x00574,0x04E28,0x04E28,0x04E28,0x00170,0x0061C,0x00504,0x006A0,0x00644,
+    0x00104,0x00004,0x00420,0x00064,0x003F0,0x0070C,0x00180,0x00004,0x0000C,0x00048,0x00054,
+    0x00644,0x005C8,0x002F8,0x01B40,0x001F4,0x001F0,0x00216,0x00390,0x01A90,0x00308,0x00618,
+    0x0025C,0x00834,0x00318,0x007D0,0x00C48,0x00078,0x00200,0x00C84,0x00628,0x34AD0,0x0E058};
+
+static const uint32_t CHK_ORAS[58] = {
+    0x00000,0x00400,0x01000,0x01200,0x01400,0x01600,0x01800,0x01A00,0x01C00,0x01E00,0x02000,
+    0x04200,0x04400,0x04A00,0x05000,0x0A000,0x0F000,0x14000,0x14200,0x14A00,0x15000,0x16200,
+    0x16A00,0x16C00,0x16E00,0x17400,0x17600,0x17A00,0x18200,0x18400,0x18600,0x18800,0x18A00,
+    0x18C00,0x19400,0x19A00,0x19E00,0x1BA00,0x1BC00,0x1C000,0x1C400,0x1CC00,0x1E800,0x1EC00,
+    0x1F400,0x1F800,0x20200,0x20600,0x20E00,0x21C00,0x21E00,0x22000,0x22E00,0x23600,0x23A00,
+    0x2B600,0x33000,0x67C00};
+
+static const uint32_t CHK_ORAS_LEN[58] = {
+    0x002C8,0x00B90,0x0002C,0x00038,0x00150,0x00004,0x00008,0x001C0,0x000BE,0x00024,0x02100,
+    0x00130,0x00440,0x00574,0x04E28,0x04E28,0x04E28,0x00170,0x0061C,0x00504,0x011CC,0x00644,
+    0x00104,0x00004,0x00420,0x00064,0x003F0,0x0070C,0x00180,0x00004,0x0000C,0x00048,0x00054,
+    0x00644,0x005C8,0x002F8,0x01B40,0x001F4,0x003E0,0x00216,0x00640,0x01A90,0x00400,0x00618,
+    0x0025C,0x00834,0x00318,0x007D0,0x00C48,0x00078,0x00200,0x00C84,0x00628,0x00400,0x07AD0,
+    0x078B0,0x34AD0,0x0E058};
+
+// ---------------- Gen 7 checksum tables (crc16, from PKSM-Core SavSUMO.hpp / SavUSUM.hpp) ----------------
+
+static const uint32_t CHK_SUMO[37] = {
+    0x00000,0x00E00,0x01000,0x01200,0x01400,0x01C00,0x02A00,0x03A00,0x03E00,0x04000,0x04200,
+    0x04400,0x04600,0x04800,0x04E00,0x3B400,0x40C00,0x40E00,0x42000,0x43C00,0x4A200,0x50800,
+    0x54200,0x54400,0x54600,0x64C00,0x65000,0x65C00,0x69C00,0x6A000,0x6A800,0x6AA00,0x6B200,
+    0x6B400,0x6B600,0x6B800,0x6BA00};
+
+static const uint32_t CHK_SUMO_LEN[37] = {
+    0xDE0,0x07C,0x014,0x0C0,0x61C,0xE00,0xF78,0x228,0x104,0x200,0x020,0x004,0x058,0x5E6,
+    0x36600,0x572C,0x008,0x1080,0x1A08,0x6408,0x6408,0x3998,0x100,0x100,0x10528,0x204,0xB60,
+    0x3F50,0x358,0x728,0x200,0x718,0x1FC,0x200,0x120,0x1C8,0x200};
+
+static const uint32_t CHK_USUM[39] = {
+    0x00000,0x01000,0x01200,0x01400,0x01600,0x01E00,0x02C00,0x03C00,0x04000,0x04400,0x04600,
+    0x04800,0x04A00,0x04C00,0x05200,0x3B800,0x41000,0x41200,0x42600,0x44200,0x4A800,0x50E00,
+    0x54800,0x54A00,0x54C00,0x65200,0x65600,0x66200,0x6A200,0x6A600,0x6AE00,0x6B000,0x6B800,
+    0x6BA00,0x6BC00,0x6BE00,0x6C000,0x6C200,0x6C600};
+
+static const uint32_t CHK_USUM_LEN[39] = {
+    0xE28,0x7C,0x14,0xC0,0x61C,0xE00,0xF78,0x228,0x30C,0x1FC,0x4C,0x4,0x58,0x5E6,0x36600,
+    0x572C,0x8,0x1218,0x1A08,0x6408,0x6408,0x3998,0x100,0x100,0x10528,0x204,0xB60,0x3F50,
+    0x358,0x728,0x200,0x718,0x1FC,0x200,0x120,0x1C8,0x200,0x39C,0x400};
+
 // Values from PKHeX (SaveBlockAccessor*, SAV8BS). Title IDs are the public application IDs.
+// Gen 6/7 offsets from PKSM-Core (SavXY.cpp, SavORAS.cpp, SavSUMO.cpp, SavUSUM.cpp).
 inline const GameDef* gameDefs(size_t& count) {
     static const GameDef g[] = {
-        {"Pokemon Sword",             0x0100ABF008968000ULL, "main",         FAM_SCBLOCK, FMT_PK8, 0x0d66012c, 0,       32, 30},
-        {"Pokemon Shield",            0x01008DB008C2C000ULL, "main",         FAM_SCBLOCK, FMT_PK8, 0x0d66012c, 0,       32, 30},
-        {"Pokemon Brilliant Diamond", 0x0100000011D90000ULL, "SaveData.bin", FAM_BDSP,    FMT_PB8, 0,          0x14EF4, 40, 30},
-        {"Pokemon Shining Pearl",     0x010018E011D92000ULL, "SaveData.bin", FAM_BDSP,    FMT_PB8, 0,          0x14EF4, 40, 30},
-        {"Pokemon Legends: Arceus",   0x01001F5010DFA000ULL, "main",         FAM_SCBLOCK, FMT_PA8, 0x47E1CEAB, 0,       32, 30},
-        {"Pokemon Scarlet",           0x0100A3D008C5C000ULL, "main",         FAM_SCBLOCK, FMT_PK9, 0x0d66012c, 0,       32, 30},
-        {"Pokemon Violet",            0x01008F6008C5E000ULL, "main",         FAM_SCBLOCK, FMT_PK9, 0x0d66012c, 0,       32, 30},
+        // --- Gen 8/9 (Switch) ---
+        {"Pokemon Sword",             0x0100ABF008968000ULL, "main",         FAM_SCBLOCK, FMT_PK8, 0x0d66012c, 0,       32, 30, 0},
+        {"Pokemon Shield",            0x01008DB008C2C000ULL, "main",         FAM_SCBLOCK, FMT_PK8, 0x0d66012c, 0,       32, 30, 0},
+        {"Pokemon Brilliant Diamond", 0x0100000011D90000ULL, "SaveData.bin", FAM_BDSP,    FMT_PB8, 0,          0x14EF4, 40, 30, 0},
+        {"Pokemon Shining Pearl",     0x010018E011D92000ULL, "SaveData.bin", FAM_BDSP,    FMT_PB8, 0,          0x14EF4, 40, 30, 0},
+        {"Pokemon Legends: Arceus",   0x01001F5010DFA000ULL, "main",         FAM_SCBLOCK, FMT_PA8, 0x47E1CEAB, 0,       32, 30, 0},
+        {"Pokemon Scarlet",           0x0100A3D008C5C000ULL, "main",         FAM_SCBLOCK, FMT_PK9, 0x0d66012c, 0,       32, 30, 0},
+        {"Pokemon Violet",            0x01008F6008C5E000ULL, "main",         FAM_SCBLOCK, FMT_PK9, 0x0d66012c, 0,       32, 30, 0},
+        // --- Gen 6/7 (3DS) ---
+        {"Pokemon X",            0x0004000000055D00ULL, "main",         FAM_SAV6, FMT_PK6, 0,          0x22600, 31,   30, 0x100000, CHK_XY,   CHK_XY_LEN,   55},
+        {"Pokemon Y",            0x0004000000055E00ULL, "main",         FAM_SAV6, FMT_PK6, 0,          0x22600, 31,   30, 0x100000, CHK_XY,   CHK_XY_LEN,   55},
+        {"Pokemon Omega Ruby",   0x000400000011C400ULL, "main",         FAM_SAV6, FMT_PK6, 0,          0x33000, 31,   30, 0x76000,  CHK_ORAS, CHK_ORAS_LEN, 58},
+        {"Pokemon Alpha Sapphire",0x000400000011C500ULL, "main",         FAM_SAV6, FMT_PK6, 0,          0x33000, 31,   30, 0x76000,  CHK_ORAS, CHK_ORAS_LEN, 58},
+        {"Pokemon Sun",          0x0004000000164800ULL, "main",         FAM_SAV7, FMT_PK7, 0,          0x4E00,   32,   30, 0x6BE00,  CHK_SUMO, CHK_SUMO_LEN, 37},
+        {"Pokemon Moon",         0x0004000000175E00ULL, "main",         FAM_SAV7, FMT_PK7, 0,          0x4E00,   32,   30, 0x6BE00,  CHK_SUMO, CHK_SUMO_LEN, 37},
+        {"Pokemon Ultra Sun",    0x00040000001B5000ULL, "main",         FAM_SAV7, FMT_PK7, 0,          0x5200,   32,   30, 0x6CC00,  CHK_USUM, CHK_USUM_LEN, 39},
+        {"Pokemon Ultra Moon",   0x00040000001B5100ULL, "main",         FAM_SAV7, FMT_PK7, 0,          0x5200,   32,   30, 0x6CC00,  CHK_USUM, CHK_USUM_LEN, 39},
     };
     count = sizeof(g) / sizeof(g[0]);
     return g;

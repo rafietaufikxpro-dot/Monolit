@@ -20,3 +20,6 @@ struct Sha256 {
 };
 
 void md5(const uint8_t* data, size_t len, uint8_t out[16]);
+
+uint16_t ccitt16(const uint8_t* data, size_t len);
+uint16_t crc16(const uint8_t* data, size_t len);
