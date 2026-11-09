@@ -32,6 +32,9 @@ const char* describe(Result r);  // short English message for the UI
 // True when conversion between the two formats is implemented.
 bool supported(Fmt from, Fmt to);
 
+// Scarlet/Violet only: the DLC a species needs (0 base game, 1 The Teal Mask, 2 The Indigo Disk), or -1 if unknown/none.
+int dlcNeeded(Fmt fmt, uint16_t species, uint8_t form);
+
 // Species/form flagged "present in game" in the destination game's personal table (same rule as PKHeX).
 bool presentInGame(Fmt fmt, uint16_t species, uint8_t form);
 
@@ -39,5 +42,5 @@ bool presentInGame(Fmt fmt, uint16_t species, uint8_t form);
 // `origSide` (optional): the encrypted slot this same Pokemon had in the destination format on an earlier visit (see
 // sidedata.h). When it matches, the destination game's own data (moves, ball, location, ability, version, ...) is
 // restored from it instead of being rebuilt, and `*restored` is set.
-Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide = nullptr, bool* restored = nullptr);
+Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide = nullptr, bool* restored = nullptr, int* dlcOut = nullptr);
 }  // namespace conv

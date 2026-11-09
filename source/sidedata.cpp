@@ -50,6 +50,37 @@ std::vector<uint8_t> serialize(const std::vector<SideEntry>& entries) {
     out.insert(out.end(), d, d + 32);
     return out;
 }
+
+bool parse(const std::vector<uint8_t>& b, std::vector<SideEntry>& out, std::string& err) {
+    out.clear();
+    if (b.size() < 8 + 4 + 32 || memcmp(b.data(), MAGIC, 8) != 0) { err = "side data file has an unknown format"; return false; }
+    Sha256 h;
+    h.init();
+    h.update(b.data(), b.size() - 32);
+    uint8_t d[32];
+    h.final(d);
+    if (memcmp(d, &b[b.size() - 32], 32) != 0) { err = "side data file failed its integrity check"; return false; }
+    const size_t end = b.size() - 32;
+    size_t off = 8;
+    uint32_t count = get32(&b[off]);
+    off += 4;
+    for (uint32_t i = 0; i < count; i++) {
+        if (off + 15 > end) { err = "side data file is truncated"; return false; }
+        SideEntry e;
+        e.fmt = (Fmt)b[off++];
+        e.key.ec = get32(&b[off]); e.key.pid = get32(&b[off + 4]); e.key.tidsid = get32(&b[off + 8]);
+        off += 12;
+        size_t sz = b[off] | (b[off + 1] << 8);
+        off += 2;
+        const FmtInfo* fi = fmtInfo(e.fmt);
+        if (!fi || sz != (size_t)fi->slotSize || off + sz > end) { err = "invalid side data entry"; return false; }
+        e.slot.assign(b.begin() + off, b.begin() + off + sz);
+        off += sz;
+        out.push_back(std::move(e));
+    }
+    if (off != end) { err = "side data file has trailing bytes"; return false; }
+    return true;
+}
 }  // namespace
 
 bool sideKeyOf(Fmt fmt, const uint8_t* slot, SideKey& key) {
@@ -63,39 +94,36 @@ bool sideKeyOf(Fmt fmt, const uint8_t* slot, SideKey& key) {
 
 bool SideStore::load(const std::string& path, std::string& err) {
     entries.clear();
+    recovered_ = false;
+    const std::string bak = path + ".bak";
     std::vector<uint8_t> b;
-    bool missing;
+    bool missing = false;
+    std::string mainErr;
+
     if (!readAll(path, b, missing)) {
-        if (missing) return true;
-        err = "cannot read " + path;
+        if (!missing) { err = "cannot read " + path; return false; }  // I/O error: never guess
+    } else if (parse(b, entries, mainErr)) {
+        return true;
+    }
+    // The main file is missing or damaged: try the backup before giving up.
+    std::vector<uint8_t> bb;
+    bool bakMissing = false;
+    if (!readAll(bak, bb, bakMissing)) {
+        if (bakMissing) {
+            if (missing) return true;  // first run: empty store
+            err = mainErr;             // damaged main file and no backup
+            return false;
+        }
+        err = "cannot read " + bak;
         return false;
     }
-    if (b.size() < 8 + 4 + 32 || memcmp(b.data(), MAGIC, 8) != 0) { err = "side data file has an unknown format"; return false; }
-    Sha256 h;
-    h.init();
-    h.update(b.data(), b.size() - 32);
-    uint8_t d[32];
-    h.final(d);
-    if (memcmp(d, &b[b.size() - 32], 32) != 0) { err = "side data file failed its integrity check"; return false; }
-    const size_t end = b.size() - 32;
-    size_t off = 8;
-    uint32_t count = get32(&b[off]);
-    off += 4;
-    for (uint32_t i = 0; i < count; i++) {
-        if (off + 15 > end) { err = "side data file is truncated"; entries.clear(); return false; }
-        SideEntry e;
-        e.fmt = (Fmt)b[off++];
-        e.key.ec = get32(&b[off]); e.key.pid = get32(&b[off + 4]); e.key.tidsid = get32(&b[off + 8]);
-        off += 12;
-        size_t sz = b[off] | (b[off + 1] << 8);
-        off += 2;
-        const FmtInfo* fi = fmtInfo(e.fmt);
-        if (!fi || sz != (size_t)fi->slotSize || off + sz > end) { err = "invalid side data entry"; entries.clear(); return false; }
-        e.slot.assign(b.begin() + off, b.begin() + off + sz);
-        off += sz;
-        entries.push_back(std::move(e));
+    std::string bakErr;
+    if (!parse(bb, entries, bakErr)) {
+        entries.clear();
+        err = (missing ? std::string("side data file missing and backup damaged: ") : mainErr + "; backup also damaged: ") + bakErr;
+        return false;
     }
-    if (off != end) { err = "side data file has trailing bytes"; entries.clear(); return false; }
+    recovered_ = true;
     return true;
 }
 
@@ -112,7 +140,16 @@ bool SideStore::save(const std::string& path, std::string& err) const {
         ok = readAll(tmp, back, missing) && back == out;
     }
     if (!ok) { remove(tmp.c_str()); err = "failed to write side data file (SD card full?)"; return false; }
-    remove(bak.c_str());
+
+    // swap it in
+    if (recovered_) {
+        // The main file is missing/invalid and ".bak" is the last good copy: keep ".bak" as it is.
+        remove(path.c_str());
+        if (rename(tmp.c_str(), path.c_str()) != 0) { remove(tmp.c_str()); err = "failed to replace side data file"; return false; }
+        recovered_ = false;
+        return true;
+    }
+    remove(bak.c_str());  // safe: the new file is already complete on disk
     bool hadMain = rename(path.c_str(), bak.c_str()) == 0;
     if (!hadMain && errno != ENOENT) { remove(tmp.c_str()); err = "failed to back up side data file"; return false; }
     if (rename(tmp.c_str(), path.c_str()) != 0) {

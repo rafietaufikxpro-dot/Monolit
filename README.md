@@ -68,14 +68,19 @@ font; no bundled assets are required.
 ## Cross-game conversion
 
 Supported pairs: Pokémon Sword/Shield ↔ Brilliant Diamond/Shining Pearl, and
-Pokémon Sword/Shield ↔ Legends: Arceus, as long as the species and form are
-available in the destination game. Following Pokémon HOME rules via PKHeX,
+Pokémon Sword/Shield ↔ Legends: Arceus, and Pokémon Sword/Shield ↔ Scarlet/Violet,
+as long as the species and form are available in the destination game. Following Pokémon HOME rules via PKHeX,
 moves are adjusted to the destination game's learnset and held items are removed.
-Moving between Brilliant Diamond/Shining Pearl and Legends: Arceus directly is not
-supported (go through Sword/Shield). Scarlet/Violet conversion is not supported yet.
+Moving directly between Brilliant Diamond/Shining Pearl, Legends: Arceus and
+Scarlet/Violet is not supported (go through Sword/Shield).
 
 Legends: Arceus specifics: Pokémon carrying the Alpha mark become Alphas, grit
 values start at zero, and move-mastery flags are not guessed (they start empty).
+
+Scarlet/Violet specifics: the Tera Type is set from the species' type (as Pokémon HOME
+does), size follows the Pokémon's scale, and the list shows when a species needs
+The Teal Mask or The Indigo Disk and your save does not have it (you get a warning
+before converting).
 
 Eggs and Nincada/Spinda (to/from Brilliant Diamond/Shining Pearl) are rejected.
 Converted Pokémon are for offline use only and do not have a valid HOME tracker.

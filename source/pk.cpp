@@ -90,7 +90,7 @@ namespace {
 // Anything after the stored part (party stats, PK8/PB8 only) is encrypted separately with the same seed.
 struct Gen8Geom { int block, storedEnd; };
 bool gen8Geom(Fmt fmt, Gen8Geom& g) {
-    if (fmt == FMT_PK8 || fmt == FMT_PB8) { g = {0x50, 0x148}; return true; }
+    if (fmt == FMT_PK8 || fmt == FMT_PB8 || fmt == FMT_PK9) { g = {0x50, 0x148}; return true; }
     if (fmt == FMT_PA8) { g = {0x58, 0x168}; return true; }
     return false;
 }

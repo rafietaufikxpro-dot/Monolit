@@ -116,7 +116,7 @@ BDSP and Legends: Arceus have no DLC (always 0). The UI only **warns** when a Po
 - Display only: nickname UTF-16LE (13 chars) at `0x58` (`0x60` for PA8); level byte at `0x148` (not present for PA8 box slots).
 - **The app never modifies Pokémon contents.** It only moves opaque slot bytes.
 
-### 4.6 Conversion (PK8 <-> PB8, PK8 <-> PA8) — `source/convert.cpp`, `source/conv_data.*` (generated)
+### 4.6 Conversion (PK8 <-> PB8, PK8 <-> PA8, PK8 <-> PK9) — `source/convert.cpp`, `source/conv_data.*` (generated)
 HOME model: shared "core" fields are copied (EC, PID, IVs/EVs, nature, ribbons, OT/HT, tracker as-is...), per-game data is rebuilt:
 ability from the target personal table by ability number, moves reset to the target learnset at the current level (PP from the
 Gen 8 PP table, PP Ups 0), relearn cleared, ball kept (PK8 target: > Beast -> Poke Ball), locations mapped (PB8 local <-> mainline,
@@ -132,6 +132,12 @@ PA8 (Legends: Arceus; box slot 0x168, no stat tail, blocks 0x58): core fields ar
 personal table, moves from `lvlmove_la` + `PP8A`, scale = height scalar, grit values 0, absolute height/weight recomputed (plain float math, no FMA), HP current = LA
 formula (Ganbaru), Alpha mark -> IsAlpha. PA8 -> PK8: Scale (or 255 for an Alpha) becomes the height scalar, Alpha adds the mark, PLA origin -> SW + placeholder
 location 60000. BD/SP <-> LA is intentionally not wired up.
+PK9 (Scarlet/Violet; slot 0x158 like PK8, same crypto geometry): `PK9_MAP` maps G8 offsets to PK9 offsets (scalars 0x50/0x51 -> 0x48/0x49, version 0xDE -> 0xCE,
+language 0xE2 -> 0xD5, form argument/affixed ribbon 0xE4 -> 0xD0, tracker 0x135 -> 0x127); fateful/gender bits differ (PK8 gender at bits 2-3, PK9 bits 1-2).
+PK8 -> PK9: ability from the SV personal table, Scale = height scalar, Tera Type original = override = type1 (type2 if type1 is Normal), obedience level = met level,
+moves from `lvlmove_sv` + `PP9`, pokerus not carried. PK9 -> PK8: PK9's Scale becomes the height scalar; SL/VL origin -> SW/SH + placeholder 59997/59996.
+Species ids below 917 are identical in the internal (PK9) and national numbering, which covers everything SwSh has; PK9-only species are refused (not in SwSh).
+DLC: `conv::dlcNeeded` reads the SV personal dex fields (Paldea / Kitakami / Blueberry) and the UI warns when the destination save lacks that DLC.
 Verified byte-for-byte against PKHeX for thousands of synthetic cases per direction (`tools/GOLDEN.md`); known differences are the legality-engine guesses
 PKHeX adds (relearn moves, Legends: Arceus move-mastery flags), which Monolit deliberately leaves empty.
 Not covered: real-device behaviour, legality, HOME service acceptance.

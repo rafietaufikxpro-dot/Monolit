@@ -56,7 +56,7 @@ enum : uint16_t { SHLG = 59994, SWFR, SHVL, SWSL, SHSP, SWBD, SWLA, SWSH_EGG = 6
 const uint16_t DEFAULT_8B_NONE = 65535, TRANSFER_PLACEHOLDER_0 = 658;
 const uint8_t BALL_BEAST = 26, BALL_POKE = 4;
 
-const GameTable& tableFor(Fmt f) { return f == FMT_PK8 ? SWSH : (f == FMT_PA8 ? LA : BDSP); }
+const GameTable& tableFor(Fmt f) { return f == FMT_PK8 ? SWSH : (f == FMT_PA8 ? LA : (f == FMT_PK9 ? SV : BDSP)); }
 
 bool hasForm(const PersonalRec& r, uint8_t form) { return form != 0 && r.formStatsIndex > 0 && form < r.formCount; }
 
@@ -130,11 +130,21 @@ const char* describe(Result r) {
 
 bool supported(Fmt from, Fmt to) {
     return (from == FMT_PK8 && to == FMT_PB8) || (from == FMT_PB8 && to == FMT_PK8) || (from == FMT_PK8 && to == FMT_PA8) ||
-           (from == FMT_PA8 && to == FMT_PK8);
+           (from == FMT_PA8 && to == FMT_PK8) || (from == FMT_PK8 && to == FMT_PK9) || (from == FMT_PK9 && to == FMT_PK8);
+}
+
+int dlcNeeded(Fmt fmt, uint16_t species, uint8_t form) {
+    if (fmt != FMT_PK9 || species == 0 || species > SV.maxSpecies) return -1;
+    const PersonalRec& base = SV.rec[species];
+    int idx = species;
+    if (form != 0 && hasForm(base, form)) idx = base.formStatsIndex + form - 1;
+    uint8_t d = idx < SV.count ? SV.rec[idx].dlc : 255;
+    if (d == 255) d = base.dlc;      // forms inherit the species' dex entry
+    return d == 255 ? -1 : d;
 }
 
 bool presentInGame(Fmt fmt, uint16_t species, uint8_t form) {
-    if (fmt != FMT_PK8 && fmt != FMT_PB8 && fmt != FMT_PA8) return false;
+    if (fmt != FMT_PK8 && fmt != FMT_PB8 && fmt != FMT_PA8 && fmt != FMT_PK9) return false;
     const GameTable& t = tableFor(fmt);
     if (species == 0 || species > t.maxSpecies) return false;
     const PersonalRec& r = t.rec[species];
@@ -373,11 +383,195 @@ static Result convertPA8(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<u
     return OK;
 }
 
-Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide, bool* restored) {
+
+// ---------------------------------------------------------------- PK8 <-> PK9 (Sword/Shield <-> Scarlet/Violet)
+namespace {
+const Map PK9_MAP[] = {
+    {0x00, 0x00, 4},    // encryption constant
+    {0x08, 0x08, 2},    // species (internal id == national id below 917)
+    {0x0C, 0x0C, 4},    // TID / SID
+    {0x10, 0x10, 4},    // EXP
+    {0x18, 0x18, 2},    // markings
+    {0x1C, 0x1C, 4},    // PID
+    {0x20, 0x20, 2},    // nature, stat nature
+    {0x24, 0x24, 1},    // form
+    {0x26, 0x26, 12},   // EVs + contest stats
+    {0x50, 0x48, 2},    // height / weight scalar
+    {0x58, 0x58, 26},   // nickname
+    {0x8C, 0x8C, 4},    // IVs, egg flag, nicknamed flag
+    {0xA8, 0xA8, 26},   // handling trainer name
+    {0xC2, 0xC2, 3},    // HT gender, HT language, current handler
+    {0xC8, 0xC8, 6},    // HT friendship + memory
+    {0xDE, 0xCE, 2},    // version, battle version
+    {0xE2, 0xD5, 1},    // language
+    {0xE4, 0xD0, 5},    // form argument, affixed ribbon
+    {0xF8, 0xF8, 26},   // original trainer name
+    {0x112, 0x112, 7},  // OT friendship + memory
+    {0x119, 0x119, 6},  // egg / met dates
+    {0x125, 0x125, 2},  // met level + OT gender, hyper training
+    {0x135, 0x127, 8},  // HOME tracker
+};
+const uint8_t RIB_MASK_TO_PK9[0x14] = {0xFF, 0xFF, 0xFF, 0xFF, 0x9F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+                                       0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x00};
+const uint8_t RIB_MASK_FROM_PK9[0x14] = {0xFF, 0xFF, 0xFF, 0xFF, 0x9F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+                                         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x00};
+}  // namespace
+
+static Result convertPK9(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide, bool* restored, int* dlcOut) {
+    const bool toSV = (to == FMT_PK9);
+    std::vector<uint8_t> s;
+    if (!pkDecryptSlot(from, srcSlot, s)) return EMPTY;
+    const FmtInfo* fi = fmtInfo(to);
+    if (!fi) return BAD_DATA;
+    // offsets in the source / destination layout
+    const int sVer = toSV ? 0xDE : 0xCE, dVer = toSV ? 0xCE : 0xDE;
+    const uint16_t species = rd16(&s[0x08]);
+    const uint8_t form = s[0x24];
+    if (species == 0 || rd32(&s[0]) == 0) return BAD_DATA;
+    if ((rd32(&s[0x8C]) >> 30) & 1) return EGG;
+    if (!presentInGame(to, species, form)) return NOT_IN_GAME;
+    const uint16_t srcMet = rd16(&s[0x122]), srcEgg = rd16(&s[0x120]);
+    const bool magic = from == FMT_PK8 && srcMet >= SHLG && srcMet <= SWLA;
+    if (dlcOut) *dlcOut = dlcNeeded(to, species, form);
+
+    std::vector<uint8_t> S;
+    bool haveSide = false;
+    if (origSide && pkDecryptSlot(to, origSide, S) && S.size() == (size_t)fi->slotSize && rd32(&S[0]) == rd32(&s[0]) &&
+        rd32(&S[0x1C]) == rd32(&s[0x1C]) && rd16(&S[0x08]) == species && S[0x24] == form) {
+        bool remap;
+        const uint16_t expect = remappedVersion(S[dVer], remap);
+        haveSide = (S[dVer] == s[sVer]) || (toSV && expect == s[sVer]);
+    }
+    if (magic && !haveSide) return FOREIGN_ORIGIN;
+    if (magic && srcMet != SWSL && srcMet != SHVL) return FOREIGN_ORIGIN;  // only Scarlet/Violet origins can come back to PK9
+
+    const GameTable& t = tableFor(to);
+    const int idx = formIndex(t, species, form);
+    const PersonalRec& pr = t.rec[idx];
+    std::vector<uint8_t> d(fi->slotSize, 0);
+
+    // 1) shared core data
+    for (const Map& m : PK9_MAP) {
+        if (toSV) memcpy(&d[m.pa8], &s[m.g8], m.len);
+        else memcpy(&d[m.g8], &s[m.pa8], m.len);
+    }
+    const uint8_t* rmask = toSV ? RIB_MASK_TO_PK9 : RIB_MASK_FROM_PK9;
+    for (int o = 0x34; o < 0x48; o++) d[o] = s[o] & rmask[o - 0x34];
+    d[0x3C] = s[0x3C]; d[0x3D] = s[0x3D];
+    if (d[0x3C]) d[0x38] |= 0x20;
+    if (d[0x3D]) d[0x38] |= 0x40;
+    d[0x16] |= s[0x16] & 0x08;   // favorite flag
+    // fateful encounter is bit 0 in both; gender sits at bits 2-3 (PK8) but bits 1-2 (PK9)
+    if (toSV) d[0x22] = (uint8_t)((s[0x22] & 1) | (((s[0x22] >> 2) & 3) << 1));
+    else d[0x22] = (uint8_t)((s[0x22] & 1) | (((s[0x22] >> 1) & 3) << 2));
+
+    // size scalars: PK9's Scale becomes the height scalar on the way in (PKH.HeightScalar is overwritten), and back
+    const int hsOff = toSV ? 0x50 : 0x48, wsOff = toSV ? 0x51 : 0x49;  // in the source layout
+    if (!toSV) d[0x50] = s[0x4A];
+    (void)hsOff; (void)wsOff;
+    if ((d[toSV ? 0x45 : 0x45] >> 3) & 1) {
+        const int h = toSV ? 0x48 : 0x50, w = toSV ? 0x49 : 0x51;
+        d[h] = d[w] = 255;
+    } else {
+        const int h = toSV ? 0x48 : 0x50, w = toSV ? 0x49 : 0x51;
+        if (d[h] == 0 && d[w] == 0) {
+            uint32_t x = (rd32(&d[0x00]) ^ (rd32(&d[0x1C]) * 2654435761u)) | 1u;
+            auto rnd = [&x](uint32_t n) { x ^= x << 13; x ^= x >> 17; x ^= x << 5; return x % n; };
+            d[h] = (uint8_t)(rnd(0x81) + rnd(0x80));
+            d[w] = (uint8_t)(rnd(0x81) + rnd(0x80));
+        }
+    }
+
+    const uint8_t level = levelFromExp(rd32(&s[0x10]), pr.growth);
+    if (haveSide) {
+        auto isCore = [&](int o) {
+            if (o >= 0x34 && o < 0x48) return true;
+            for (const Map& m : PK9_MAP) {
+                const int off = toSV ? m.pa8 : m.g8;
+                if (o >= off && o < off + m.len) return true;
+            }
+            return o >= 0x11F && o < 0x120;   // obedience level follows the met level
+        };
+        const int statusOff = toSV ? 0x90 : 0x94;
+        for (int o = 0x08; o < 0x148; o++) {
+            if (isCore(o) || o == 0x0A || o == 0x0B || o == 0x8A || o == 0x8B || (o >= statusOff && o < statusOff + 4) || o == 0x16 || o == 0x22) continue;
+            d[o] = S[o];
+        }
+        d[0x16] = (uint8_t)((S[0x16] & 0x07) | (s[0x16] & 0x08));
+        d[dVer] = S[dVer];
+        if (restored) *restored = true;
+    } else {
+        // 2) per-game data rebuilt for the destination (PKHeX GameDataPK9 / GameDataPK8 InitializeFrom + CopyTo)
+        const uint8_t abilityNumber = s[0x16] & 7;
+        int ai = abilityNumber >> 1;
+        if (ai >= 3) ai = 0;
+        wr16(&d[0x14], pr.abil[ai]);
+        d[0x16] = (uint8_t)((d[0x16] & ~7) | abilityNumber);
+        d[0x124] = s[0x124];
+        uint16_t met = srcMet, egg = srcEgg;
+        if (toSV) {
+            d[0x4A] = d[0x48];                                   // Scale = height scalar
+            d[0x94] = d[0x95] = pr.type1 != 0 ? pr.type1 : pr.type2;   // Tera Type import
+        } else {
+            d[0x32] = 0;                                         // SV data carries no pokerus state
+            if (d[0x124] > BALL_BEAST) d[0x124] = BALL_POKE;
+            bool remap;
+            const uint16_t nv = remappedVersion(s[sVer], remap);
+            if (remap) {
+                d[dVer] = (uint8_t)nv;
+                met = magicMet(s[sVer]);
+                egg = egg == 0 ? (uint16_t)0 : (egg > SWLA ? (uint16_t)SWSH_EGG : magicMet(s[sVer]));
+            }
+        }
+        wr16(&d[0x122], met);
+        wr16(&d[0x120], egg);
+
+        // 3) moves reset to the destination learnset at this level; relearn moves and PP Ups are cleared
+        uint16_t mv[4] = {0, 0, 0, 0};
+        encounterMoves(t, idx, level, mv);
+        for (int i = 0; i < 4; i++) {
+            wr16(&d[0x72 + i * 2], mv[i]);
+            const uint8_t* ppTable = toSV ? PP9 : PP8;
+            const int ppCount = toSV ? PP9_COUNT : PP8_COUNT;
+            d[0x7A + i] = mv[i] < ppCount ? ppTable[mv[i]] : 0;
+        }
+    }
+    if (toSV) d[0x11F] = d[0x125] & 0x7F;   // obedience level = met level
+
+    // 4) party stats (same formula and layout for both)
+    uint16_t st[6];
+    const uint8_t ht = d[0x126];
+    const int iv32 = (int)rd32(&d[0x8C]);
+    const int ivs[6] = {iv32 & 31, (iv32 >> 5) & 31, (iv32 >> 10) & 31, (iv32 >> 15) & 31, (iv32 >> 20) & 31, (iv32 >> 25) & 31};
+    const int ev[6] = {d[0x26], d[0x27], d[0x28], d[0x29], d[0x2A], d[0x2B]};
+    const int htBit[6] = {0, 1, 2, 5, 3, 4};
+    for (int i = 0; i < 6; i++) {
+        int iv = ((ht >> htBit[i]) & 1) ? 31 : ivs[i];
+        int base = pr.stats[i];
+        st[i] = (uint16_t)(i == 0 ? (base == 1 ? 1 : ((iv + 2 * base + ev[i] / 4 + 100) * level / 100) + 10)
+                                  : ((iv + 2 * base + ev[i] / 4) * level / 100) + 5);
+    }
+    const int nature = d[0x21];
+    if (nature < 25 && nature / 5 != nature % 5) {
+        st[nature / 5 + 1] = (uint16_t)(st[nature / 5 + 1] * 11 / 10);
+        st[nature % 5 + 1] = (uint16_t)(st[nature % 5 + 1] * 9 / 10);
+    }
+    d[0x148] = level;
+    wr16(&d[0x8A], st[0]);
+    for (int i = 0; i < 6; i++) wr16(&d[0x14A + i * 2], st[i]);
+
+    pkEncryptSlot(to, d);
+    out = d;
+    return OK;
+}
+
+Result convertSlot(Fmt from, Fmt to, const uint8_t* srcSlot, std::vector<uint8_t>& out, const uint8_t* origSide, bool* restored, int* dlcOut) {
     if (restored) *restored = false;
+    if (dlcOut) *dlcOut = -1;
     if (from == to) return SAME_FORMAT;
     if (!supported(from, to)) return UNSUPPORTED_FORMAT;
     if (from == FMT_PA8 || to == FMT_PA8) return convertPA8(from, to, srcSlot, out, origSide, restored);
+    if (from == FMT_PK9 || to == FMT_PK9) return convertPK9(from, to, srcSlot, out, origSide, restored, dlcOut);
     std::vector<uint8_t> s;
     if (!pkDecryptSlot(from, srcSlot, s)) return EMPTY;
     const FmtInfo* fi = fmtInfo(to);

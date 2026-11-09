@@ -33,11 +33,18 @@ public:
     static const size_t MAX_ENTRIES = 3000;
     std::vector<SideEntry> entries;
 
-    // A missing file is fine (empty store, returns true). Any damaged/unreadable file returns false and leaves the store empty.
+    // A missing file is fine (empty store, returns true). A missing or damaged main file with a valid
+    // ".bak" is recovered (recoveredFromBackup() returns true). Any other damaged/unreadable file returns
+    // false and leaves the store empty.
     bool load(const std::string& path, std::string& err);
     // Writes <path>.tmp, reads it back, then swaps it in (keeps the previous file as <path>.bak).
     bool save(const std::string& path, std::string& err) const;
 
     void put(Fmt fmt, const uint8_t* slot);                          // replaces the entry for the same (fmt, identity)
     const SideEntry* find(Fmt fmt, const SideKey& key) const;
+
+    bool recoveredFromBackup() const { return recovered_; }
+
+private:
+    mutable bool recovered_ = false;
 };

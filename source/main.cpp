@@ -53,6 +53,8 @@ static const DrawFn NO_BASE = [] {};
 
 // ---------------------------------------------------------------- input / dialogs
 // Redraws every frame until a button is pressed (so the screen also recovers after the HOME menu).
+// Returns 0 when the applet is closing. 0 is never a real button, so no caller can mistake it for an
+// action (the old sentinel, HidNpadButton_Plus, made screenSave write to the save on applet exit).
 static u64 waitKey(const DrawFn& draw) {
     while (appletMainLoop()) {
         draw();
@@ -61,7 +63,7 @@ static u64 waitKey(const DrawFn& draw) {
         u64 d = padGetButtonsDown(&g_pad);
         if (d) return d;
     }
-    return HidNpadButton_Plus;  // applet is closing
+    return 0;  // applet is closing
 }
 
 static void notice(const DrawFn& base, const std::string& title, const std::string& body, bool warn = false) {
@@ -276,17 +278,17 @@ struct PickResult {
 
 // Lists bank entries of this format plus convertible ones (PK8 <-> PB8). Converted data is computed once up front.
 static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int haveDlc) {
-    struct Row { int bank; conv::Result res; std::vector<uint8_t> data; bool restored = false; };
+    struct Row { int bank; conv::Result res; std::vector<uint8_t> data; bool restored = false; int dlc = -1; };
     std::vector<Row> rows;
     for (size_t i = 0; i < g_bank.entries.size(); i++) {
         const BankEntry& e = g_bank.entries[i];
         if (taken[i]) continue;
-        if (e.fmt == fmt) { rows.push_back(Row{(int)i, conv::OK, {}, false}); continue; }
+        if (e.fmt == fmt) { rows.push_back(Row{(int)i, conv::OK, {}, false, -1}); continue; }
         if (!conv::supported(e.fmt, fmt)) continue;
-        Row r{(int)i, conv::OK, {}, false};
+        Row r{(int)i, conv::OK, {}, false, -1};
         SideKey key;
         const SideEntry* se = sideKeyOf(e.fmt, e.data.data(), key) ? g_sides.find(fmt, key) : nullptr;  // earlier visit to this game?
-        r.res = conv::convertSlot(e.fmt, fmt, e.data.data(), r.data, se ? se->slot.data() : nullptr, &r.restored);
+        r.res = conv::convertSlot(e.fmt, fmt, e.data.data(), r.data, se ? se->slot.data() : nullptr, &r.restored, &r.dlc);
         rows.push_back(std::move(r));
     }
     int cur = 0, top = 0;
@@ -302,7 +304,8 @@ static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int have
             ui::Col col = ui::WARN;
             if (be.fmt != fmt) {
                 const FmtInfo* sf = fmtInfo(be.fmt);
-                if (rows[i].res == conv::OK) right = std::string("CONVERT from ") + (sf ? sf->name : "?") + (rows[i].restored ? " + original data" : "");
+                if (rows[i].res == conv::OK) right = std::string("CONVERT from ") + (sf ? sf->name : "?") + (rows[i].restored ? " + original data" : "") +
+                                       (rows[i].dlc > haveDlc ? std::string(" | NEEDS ") + dlcName(fmt, rows[i].dlc) : std::string());
                 else {
                     switch (rows[i].res) {
                         case conv::FOREIGN_ORIGIN: right = "CANNOT: original data missing"; break;
@@ -341,7 +344,9 @@ static PickResult pickFromBank(Fmt fmt, const std::vector<bool>& taken, int have
                     : "Moves are reset to what the destination game gives at this level, ability/ball/location are adjusted and the held item is removed. Monolit keeps a copy of the original data so it can be restored if the Pokémon returns to its original game.\n") +
                 "The result has no valid HOME tracker: use it OFFLINE ONLY (not with real HOME, trades or online battles).";
             if (fmt == FMT_PK8) body += "\nIf this Pokémon only exists in the Sword/Shield DLC, make sure the destination save has that DLC.";
-            if (!confirmA(draw, "Cross-game conversion", body, "Convert", "Cancel", true)) continue;
+            const bool needsDlc = rows[cur].dlc > haveDlc;
+            if (needsDlc) body += std::string("\nWARNING: this species comes from ") + dlcName(fmt, rows[cur].dlc) + ", which this save does not have. Adding it can crash the game or corrupt the save.";
+            if (!confirmA(draw, "Cross-game conversion", body, needsDlc ? "Convert anyway" : "Convert", "Cancel", true)) continue;
             pr.data = rows[cur].data;
             pr.converted = true;
             return pr;
@@ -437,6 +442,7 @@ static void screenSave(const GameDef& g) {
 
     while (appletMainLoop()) {
         u64 k = waitKey(base);
+        if (!appletMainLoop()) break;  // applet closed while waiting: never act on the "no button" sentinel
         msg.clear();
         if ((k & HidNpadButton_Right) && cur + 1 < img.perBox()) cur++;
         if ((k & HidNpadButton_Left) && cur > 0) cur--;
@@ -587,15 +593,13 @@ int main(int argc, char** argv) {
     {   // Original per-game data of converted Pokemon. A damaged file must never block the app or be silently overwritten.
         std::string e4;
         if (!g_sides.load(SIDES_FILE, e4)) {
-            const std::string bak = std::string(SIDES_FILE) + ".bak";
-            if (g_sides.load(bak, e4)) {
-                notice(NO_BASE, "Side data restored from backup", "sides.dat was damaged; the previous copy (sides.dat.bak) is being used.");
-            } else {
-                rename(SIDES_FILE, (std::string(SIDES_FILE) + ".corrupt").c_str());
-                g_sides.entries.clear();
-                notice(NO_BASE, "Side data file is damaged",
-                       e4 + "\nIt was renamed to sides.dat.corrupt and Monolit continues without it. Pokémon converted earlier can no longer get their original data back.", true);
-            }
+            rename(SIDES_FILE, (std::string(SIDES_FILE) + ".corrupt").c_str());
+            g_sides.entries.clear();
+            notice(NO_BASE, "Side data file is damaged",
+                   e4 + "\nIt was renamed to sides.dat.corrupt and Monolit continues without it. Pokémon converted earlier can no longer get their original data back.", true);
+        } else if (g_sides.recoveredFromBackup()) {
+            notice(NO_BASE, "Side data restored from backup",
+                   "sides.dat was missing or damaged. The previous copy (sides.dat.bak) is being used.\nThe next save will create a new main file; the backup copy stays intact.");
         }
     }
 

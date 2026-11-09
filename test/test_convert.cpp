@@ -83,6 +83,33 @@ static bool checksumLA(const std::vector<uint8_t>& p) {
     return sum == r16(p, 6);
 }
 
+
+// Builds an encrypted synthetic Scarlet/Violet slot (PK9 layout, 0x158 bytes incl. stat tail).
+static std::vector<uint8_t> makeSV(uint16_t species, uint8_t level, uint8_t version, uint16_t met, uint8_t ball) {
+    std::vector<uint8_t> p(0x158, 0);
+    w32(p, 0, 0xC1D2E3F4u);
+    w16(p, 0x08, species);
+    w32(p, 0x0C, 0x600DCAFEu);
+    w32(p, 0x10, conv::EXP_TABLE[conv::SV.rec[species].growth][level - 1]);
+    p[0x16] = 2;                                      // ability number 2
+    w32(p, 0x1C, 0xABCDEF01u);
+    p[0x20] = p[0x21] = 3;
+    p[0x22] = 1 | (1 << 1);                           // fateful encounter + gender 1 (PK9 puts gender at bits 1-2)
+    w32(p, 0x8C, 31u | (30u << 5) | (29u << 10) | (28u << 15) | (27u << 20) | (26u << 25));
+    const char16_t nick[] = u"Paldea";
+    for (int i = 0; i < 6; i++) w16(p, 0x58 + i * 2, nick[i]);
+    p[0xCE] = version; p[0xD5] = 2;
+    w16(p, 0x122, met);
+    p[0x124] = ball; p[0x125] = 20; p[0x11F] = 20;
+    p[0x48] = 70; p[0x49] = 80; p[0x4A] = 99;       // height scalar, weight scalar, Scale
+    p[0x94] = 14; p[0x95] = 9;                       // Tera Type original / override
+    w16(p, 0x72, 85); w16(p, 0x74, 98); w16(p, 0x76, 21); w16(p, 0x78, 129);
+    p[0x7A] = 15; p[0x7B] = 30; p[0x7C] = 20; p[0x7D] = 10; p[0x7E] = 1; p[0x7F] = 2;
+    p[0x32] = 5;                                     // pokerus
+    pkEncryptSlot(FMT_PK9, p);
+    return p;
+}
+
 int main() {
     // crypto round trip
     {
@@ -165,7 +192,7 @@ int main() {
         std::vector<uint8_t> empty(0x158, 0);
         CHECK(conv::convertSlot(FMT_PK8, FMT_PB8, empty.data(), out) == conv::EMPTY);
         CHECK(conv::convertSlot(FMT_PK8, FMT_PK8, grookey.data(), out) == conv::SAME_FORMAT);
-        CHECK(conv::convertSlot(FMT_PK8, FMT_PK9, grookey.data(), out) == conv::UNSUPPORTED_FORMAT);
+        CHECK(conv::convertSlot(FMT_PB8, FMT_PK9, grookey.data(), out) == conv::UNSUPPORTED_FORMAT);
     }
     // round trip keeps shared data
     {
@@ -286,6 +313,70 @@ int main() {
         CHECK(conv::convertSlot(FMT_PB8, FMT_PA8, bdsp.data(), out) == conv::UNSUPPORTED_FORMAT);  // BDSP <-> LA not implemented
         CHECK(conv::supported(FMT_PK8, FMT_PA8) && conv::supported(FMT_PA8, FMT_PK8) && !conv::supported(FMT_PA8, FMT_PB8));
     }
+
+    // ---- Sword/Shield <-> Scarlet/Violet (PK8 <-> PK9)
+    {
+        auto src = make(FMT_PK8, 25, 0, 25, 44, 12);
+        { auto p = plain(FMT_PK8, src); p[0x22] = 1 | (1 << 2); pkEncryptSlot(FMT_PK8, p); src = p; }   // fateful + gender 1 (PK8 bits 2-3)
+        std::vector<uint8_t> out; int dlc = 99;
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PK9, src.data(), out, nullptr, nullptr, &dlc) == conv::OK);
+        auto d = plain(FMT_PK9, out), s0 = plain(FMT_PK8, src);
+        CHECK(checksumOk(d) && dlc == 0);                                              // Pikachu is in the base game
+        CHECK(memcmp(&d[0], &s0[0], 4) == 0 && memcmp(&d[0x1C], &s0[0x1C], 4) == 0 && memcmp(&d[0x8C], &s0[0x8C], 4) == 0);
+        CHECK(d[0x22] == 3);                                                           // gender moved from bits 2-3 to bits 1-2
+        const auto& pr = conv::SV.rec[25];
+        CHECK(r16(d, 0x14) == pr.abil[1] && (d[0x16] & 7) == 2);
+        CHECK(d[0xCE] == 44 && r16(d, 0x122) == 12 && d[0x124] == 4);                  // version / location / ball kept
+        CHECK(d[0x94] == pr.type1 && d[0x95] == pr.type1 && d[0x4A] == d[0x48]);       // Tera Type import, Scale = height scalar
+        CHECK(d[0x11F] == (d[0x125] & 0x7F) && d[0x32] == 0);                          // obedience = met level, no pokerus
+        CHECK(r16(d, 0x72) != 0 && d[0x7A] == conv::PP9[r16(d, 0x72)] && r16(d, 0x82) == 0 && r16(d, 0x0A) == 0);
+        const auto& r = conv::SV.rec[25];
+        for (int m = 0; m < 4; m++) {
+            uint16_t mv = r16(d, 0x72 + m * 2);
+            if (!mv) continue;
+            bool ok = false;
+            for (int i = 0; i < r.learnCount; i++)
+                if (conv::SV.learnMoves[r.learnOff + i] == mv && conv::SV.learnLevels[r.learnOff + i] <= 25) ok = true;
+            CHECK(ok);
+        }
+    }
+    {
+        // Scarlet Pokemon -> Sword/Shield -> back, with and without the stored original
+        auto orig = makeSV(25, 30, 50 /*SL*/, 100, 7);
+        std::vector<uint8_t> sw, back;
+        CHECK(conv::convertSlot(FMT_PK9, FMT_PK8, orig.data(), sw) == conv::OK);
+        auto d = plain(FMT_PK8, sw);
+        CHECK(d[0xDE] == 44 && r16(d, 0x122) == 59997 && d[0x124] == 7);                // SL -> SW, placeholder location
+        CHECK(d[0x50] == 99 && d[0x51] == 80);                                          // Scale becomes the height scalar
+        CHECK((d[0x22] & 1) == 1 && ((d[0x22] >> 2) & 3) == 1);                         // fateful kept, gender back to bits 2-3
+        CHECK(d[0x32] == 0 && checksumOk(d));
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PK9, sw.data(), back) == conv::FOREIGN_ORIGIN);
+        bool restored = false;
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PK9, sw.data(), back, orig.data(), &restored) == conv::OK && restored);
+        auto a = plain(FMT_PK9, orig), b = plain(FMT_PK9, back);
+        CHECK(b[0xCE] == 50 && r16(b, 0x122) == 100 && b[0x124] == 7);                  // version, location, ball come back
+        CHECK(memcmp(&a[0x72], &b[0x72], 0x18) == 0);                                   // original moves, PP, PP Ups, relearn
+        CHECK(b[0x94] == 14 && b[0x95] == 9 && b[0x4A] == 99 && b[0x32] == 5);           // Tera Types, Scale, pokerus from the old data
+        CHECK(memcmp(&a[0x1C], &b[0x1C], 4) == 0 && checksumOk(b));
+        // a Pokemon from the other placeholder (Sword/Shield <- BD/SP) never returns to PK9
+        auto bd = make(FMT_PK8, 25, 0, 20, 44, 59999);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PK9, bd.data(), back, orig.data(), &restored) == conv::FOREIGN_ORIGIN);
+    }
+    {
+        // DLC requirements come from the Scarlet/Violet dex data
+        CHECK(conv::dlcNeeded(FMT_PK9, 25, 0) == 0);      // Pikachu: Paldea dex
+        CHECK(conv::dlcNeeded(FMT_PK9, 27, 0) == 1);      // Sandshrew: The Teal Mask only
+        CHECK(conv::dlcNeeded(FMT_PK9, 1, 0) == 2);       // Bulbasaur: The Indigo Disk only
+        CHECK(conv::dlcNeeded(FMT_PK9, 144, 0) == -1);    // in no regional dex: no requirement known
+        CHECK(conv::dlcNeeded(FMT_PK8, 25, 0) == -1);
+        std::vector<uint8_t> out; int dlc = 0;
+        auto sandshrew = make(FMT_PK8, 27, 0, 20, 44, 12);
+        CHECK(conv::convertSlot(FMT_PK8, FMT_PK9, sandshrew.data(), out, nullptr, nullptr, &dlc) == conv::OK && dlc == 1);
+        auto ogerpon = makeSV(25, 10, 50, 100, 4);
+        { auto p = plain(FMT_PK9, ogerpon); w16(p, 0x08, 1017); pkEncryptSlot(FMT_PK9, p); ogerpon = p; }   // species that SwSh does not have
+        CHECK(conv::convertSlot(FMT_PK9, FMT_PK8, ogerpon.data(), out) == conv::NOT_IN_GAME);
+        CHECK(conv::supported(FMT_PK8, FMT_PK9) && conv::supported(FMT_PK9, FMT_PK8) && !conv::supported(FMT_PK9, FMT_PB8) && !conv::supported(FMT_PA8, FMT_PK9));
+    }
     // ---- SideStore file
     {
         const std::string path = "/tmp/monolit_sides_test.dat";
@@ -307,6 +398,53 @@ int main() {
         SideStore st3;
         CHECK(!st3.load(path, err) && st3.entries.empty());
         remove(path.c_str()); remove((path + ".bak").c_str());
+    }
+
+    // ---- SideStore: a missing/damaged main file is recovered from .bak (same rule as Bank)
+    {
+        (void)!system("rm -rf /tmp/sdest && mkdir -p /tmp/sdest");
+        const std::string P = "/tmp/sdest/sides.dat", B = P + ".bak";
+        auto slurp = [](const std::string& p) { std::vector<uint8_t> v; FILE* f = fopen(p.c_str(), "rb"); if (!f) return v; uint8_t t[4096]; size_t n; while ((n = fread(t, 1, sizeof t, f)) > 0) v.insert(v.end(), t, t + n); fclose(f); return v; };
+        std::string err;
+
+        // a valid main + bak (the bak is the previous good copy)
+        SideStore s0;
+        s0.put(FMT_PK8, make(FMT_PK8, 25, 0, 20, 44, 12, 4).data());
+        s0.put(FMT_PB8, make(FMT_PB8, 133, 0, 20, 48, 12, 4).data());
+        CHECK(s0.save(P, err));
+        CHECK(s0.save(P, err));
+        CHECK(!slurp(B).empty());
+
+        // 1. main missing, bak valid -> recovered; saving again keeps the good bak intact
+        std::vector<uint8_t> bakBefore = slurp(B);
+        remove(P.c_str());
+        SideStore s1;
+        CHECK(s1.load(P, err) && s1.recoveredFromBackup() && s1.entries.size() == 2);
+        s1.put(FMT_PA8, makeLA(25, 20, 47, 600, 30, false).data());
+        CHECK(s1.save(P, err));
+        CHECK(slurp(B) == bakBefore);
+        SideStore s1b;
+        CHECK(s1b.load(P, err) && !s1b.recoveredFromBackup() && s1b.entries.size() == 3);
+
+        // 2. main damaged, bak valid -> recovered
+        { FILE* f = fopen(P.c_str(), "wb"); fwrite("garbage", 1, 7, f); fclose(f); }
+        SideStore s2;
+        CHECK(s2.load(P, err) && s2.recoveredFromBackup() && s2.entries.size() == 2);
+
+        // 3. main missing, no bak -> empty store, not recovered
+        remove(P.c_str()); remove(B.c_str());
+        SideStore s3;
+        CHECK(s3.load(P, err) && s3.entries.empty() && !s3.recoveredFromBackup());
+
+        // 4. main damaged, no bak -> error, empty store
+        { FILE* f = fopen(P.c_str(), "wb"); fwrite("garbage", 1, 7, f); fclose(f); }
+        SideStore s4; err.clear();
+        CHECK(!s4.load(P, err) && !err.empty() && s4.entries.empty());
+
+        // 5. I/O error (path is a directory) must not be treated as empty
+        (void)!system("rm -rf /tmp/sdest/io && mkdir -p /tmp/sdest/io/x.dat");
+        SideStore s5; err.clear();
+        CHECK(!s5.load("/tmp/sdest/io/x.dat", err) && !err.empty() && s5.entries.empty());
     }
     printf(fails ? "\n%d FAILED\n" : "\nCONVERT TESTS PASSED\n", fails);
     return fails ? 1 : 0;

@@ -16,7 +16,9 @@ struct PersonalRec {
     uint16_t formStatsIndex;
     uint32_t learnOff;
     uint16_t learnCount;
-    uint16_t height, weight;  // Gen 8 personal layout (LA uses them for absolute size); 0 elsewhere
+    uint16_t height, weight;  // SwSh/LA/SV personal data (absolute size); 0 elsewhere
+    uint8_t type1, type2;     // for the Tera Type import (Scarlet/Violet)
+    uint8_t dlc;              // Scarlet/Violet: 0 base game, 1 The Teal Mask, 2 The Indigo Disk, 255 not in any dex
 };
 struct GameTable {
     const PersonalRec* rec;
@@ -25,11 +27,13 @@ struct GameTable {
     const uint16_t* learnMoves;
     const uint8_t* learnLevels;
 };
-extern const GameTable SWSH, BDSP, LA;
+extern const GameTable SWSH, BDSP, LA, SV;
 extern const uint8_t PP8[];  // base PP per move id (Gen 8 and 8b share one table)
 extern const int PP8_COUNT;
 extern const uint8_t PP8A[];  // Legends: Arceus base PP
 extern const int PP8A_COUNT;
+extern const uint8_t PP9[];   // Scarlet/Violet base PP
+extern const int PP9_COUNT;
 constexpr int EXP_LEVELS = 100;
 extern const uint32_t EXP_TABLE[6][100];
 }  // namespace conv

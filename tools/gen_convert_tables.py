@@ -5,8 +5,8 @@
 """Generates source/conv_data.{h,cpp} (SwSh/BDSP conversion tables) from a PKHeX checkout (GPL-3.0).
 
 Usage: tools/gen_convert_tables.py /path/to/PKHeX
-Sources (PKHeX.Core): Resources/byte/personal/personal_{swsh,bdsp,la}, Resources/byte/levelup/lvlmove_{swsh,bdsp,la}.pkl,
-Moves/MoveInfo8.cs + MoveInfo8a.cs (PP), PKM/Util/Experience.cs (growth), Legality/Legal.cs (max species).
+Sources (PKHeX.Core): Resources/byte/personal/personal_{swsh,bdsp,la,sv}, Resources/byte/levelup/lvlmove_{swsh,bdsp,la,sv}.pkl,
+Moves/MoveInfo8.cs + MoveInfo8a.cs + MoveInfo9.cs (PP), PKM/Util/Experience.cs (growth), Legality/Legal.cs (max species).
 Re-run and commit the output when PKHeX data changes; the PKHeX commit is recorded in conv_data.cpp.
 """
 import re, struct, subprocess, sys, os
@@ -23,9 +23,15 @@ def personal(data, size):
     out = []
     for i in range(len(data) // size):
         d = data[i * size:(i + 1) * size]
-        out.append(dict(stats=list(d[0:6]), growth=d[0x15], abil=[u16(d, 0x18), u16(d, 0x1A), u16(d, 0x1C)],
-                        fsi=u16(d, 0x1E), fc=d[0x20], present=(d[0x21] >> 6) & 1,
-                        h=u16(d, 0x24) if size == 0xB0 else 0, w=u16(d, 0x26) if size == 0xB0 else 0))  # height/weight: Gen 8 layout only
+        if size == 0x50:   # Scarlet/Violet layout
+            dlc = 0 if u16(d, 0x1E) else (1 if d[0x4A] else (2 if d[0x4B] else 255))  # Paldea / Teal Mask / Indigo Disk dex
+            out.append(dict(stats=list(d[0:6]), growth=d[0x0F], abil=[u16(d, 0x12), u16(d, 0x14), u16(d, 0x16)], fsi=u16(d, 0x18), fc=d[0x1A],
+                            present=1 if d[0x1C] else 0, h=u16(d, 0x20), w=u16(d, 0x22), t1=d[0x06], t2=d[0x07], dlc=dlc))
+        else:              # Sword/Shield, Legends: Arceus (0xB0) and Brilliant Diamond/Shining Pearl (0x44)
+            out.append(dict(stats=list(d[0:6]), growth=d[0x15], abil=[u16(d, 0x18), u16(d, 0x1A), u16(d, 0x1C)],
+                            fsi=u16(d, 0x1E), fc=d[0x20], present=(d[0x21] >> 6) & 1,
+                            h=u16(d, 0x24) if size == 0xB0 else 0, w=u16(d, 0x26) if size == 0xB0 else 0,  # height/weight: SwSh/LA layout only
+                            t1=d[0x06], t2=d[0x07], dlc=255))
     return out
 
 def learnsets(data, ident, n):
@@ -53,8 +59,8 @@ def emit_game(tag, pers, ls, max_species):
         offs.append((len(mv), len(m))); mv += m; lv += l
     recs = []
     for p, (o, c) in zip(pers, offs):
-        recs.append("{{%s},%d,%d,%d,{%d,%d,%d},%d,%d,%d,%d,%d}" % (",".join(map(str, p["stats"])), p["growth"], p["fc"], p["present"],
-                    *p["abil"], p["fsi"], o, c, p["h"], p["w"]))
+        recs.append("{{%s},%d,%d,%d,{%d,%d,%d},%d,%d,%d,%d,%d,%d,%d,%d}" % (",".join(map(str, p["stats"])), p["growth"], p["fc"], p["present"],
+                    *p["abil"], p["fsi"], o, c, p["h"], p["w"], p["t1"], p["t2"], p["dlc"]))
     s = arr(f"{tag}_LEARN_MOVES", "uint16_t", mv) + arr(f"{tag}_LEARN_LEVELS", "uint8_t", lv)
     s += f"const PersonalRec {tag}_REC[] = {{\n    " + ",\n    ".join(", ".join(recs[i:i + 3]) for i in range(0, len(recs), 3)) + "\n};\n"
     s += f"const GameTable {tag} = {{{tag}_REC, {len(recs)}, {max_species}, {tag}_LEARN_MOVES, {tag}_LEARN_LEVELS}};\n"
@@ -64,18 +70,22 @@ legal = rt("Legality/Legal.cs")
 max_swsh = int(re.search(r"MaxSpeciesID_8_R2\s*=\s*(\d+)", legal).group(1))
 max_bdsp = 493  # Legal.MaxSpeciesID_8b = MaxSpeciesID_4
 max_la = 905    # Legal.MaxSpeciesID_8a = Enamorus
+max_sv = 1025   # Legal.MaxSpeciesID_9_T2 = Pecharunt
 sw = personal(rd("Resources/byte/personal/personal_swsh"), 0xB0)
 bd = personal(rd("Resources/byte/personal/personal_bdsp"), 0x44)
 lsw = learnsets(rd("Resources/byte/levelup/lvlmove_swsh.pkl"), b"ss", len(sw))
 lbd = learnsets(rd("Resources/byte/levelup/lvlmove_bdsp.pkl"), b"bs", len(bd))
 la = personal(rd("Resources/byte/personal/personal_la"), 0xB0)
 lla = learnsets(rd("Resources/byte/levelup/lvlmove_la.pkl"), b"la", len(la))
+sv = personal(rd("Resources/byte/personal/personal_sv"), 0x50)
+lsv = learnsets(rd("Resources/byte/levelup/lvlmove_sv.pkl"), b"sv", len(sv))
 
 def pptable(f):
     body = re.search(r"PP =>\s*\[(.*?)\];", rt(f), re.S).group(1)
     return [int(x) for x in re.findall(r"\b\d+\b", re.sub(r"//.*", "", body))]
 pp = pptable("Moves/MoveInfo8.cs")
 ppa = pptable("Moves/MoveInfo8a.cs")
+pp9 = pptable("Moves/MoveInfo9.cs")
 
 ex = rt("PKM/Util/Experience.cs")
 growth = []
@@ -103,7 +113,9 @@ struct PersonalRec {
     uint16_t formStatsIndex;
     uint32_t learnOff;
     uint16_t learnCount;
-    uint16_t height, weight;  // Gen 8 personal layout (LA uses them for absolute size); 0 elsewhere
+    uint16_t height, weight;  // SwSh/LA/SV personal data (absolute size); 0 elsewhere
+    uint8_t type1, type2;     // for the Tera Type import (Scarlet/Violet)
+    uint8_t dlc;              // Scarlet/Violet: 0 base game, 1 The Teal Mask, 2 The Indigo Disk, 255 not in any dex
 };
 struct GameTable {
     const PersonalRec* rec;
@@ -112,11 +124,13 @@ struct GameTable {
     const uint16_t* learnMoves;
     const uint8_t* learnLevels;
 };
-extern const GameTable SWSH, BDSP, LA;
+extern const GameTable SWSH, BDSP, LA, SV;
 extern const uint8_t PP8[];  // base PP per move id (Gen 8 and 8b share one table)
 extern const int PP8_COUNT;
 extern const uint8_t PP8A[];  // Legends: Arceus base PP
 extern const int PP8A_COUNT;
+extern const uint8_t PP9[];   // Scarlet/Violet base PP
+extern const int PP9_COUNT;
 constexpr int EXP_LEVELS = %d;
 extern const uint32_t EXP_TABLE[6][%d];
 }  // namespace conv
@@ -124,9 +138,10 @@ extern const uint32_t EXP_TABLE[6][%d];
 open("source/conv_data.h", "w").write(hdr)
 
 body = hdr.split("#pragma once\n")[0] + '#include "conv_data.h"\n\nnamespace conv {\n'
-body += emit_game("SWSH", sw, lsw, max_swsh) + emit_game("BDSP", bd, lbd, max_bdsp) + emit_game("LA", la, lla, max_la)
+body += emit_game("SWSH", sw, lsw, max_swsh) + emit_game("BDSP", bd, lbd, max_bdsp) + emit_game("LA", la, lla, max_la) + emit_game("SV", sv, lsv, max_sv)
 body += arr("PP8", "uint8_t", pp, 20) + f"const int PP8_COUNT = {len(pp)};\n"
 body += arr("PP8A", "uint8_t", ppa, 20) + f"const int PP8A_COUNT = {len(ppa)};\n"
+body += arr("PP9", "uint8_t", pp9, 20) + f"const int PP9_COUNT = {len(pp9)};\n"
 body += "const uint32_t EXP_TABLE[6][%d] = {\n" % len(growth[0]) + ",\n".join("    {" + ",".join(map(str, g)) + "}" for g in growth) + "\n};\n}  // namespace conv\n"
 open("source/conv_data.cpp", "w").write(body)
-print("species max swsh/bdsp/la:", max_swsh, max_bdsp, max_la, "| la personal/learn:", len(la), len(lla), "| pp8a:", len(ppa), "| personal:", len(sw), len(bd), "| learn:", len(lsw), len(lbd), "| pp:", len(pp), "| exp len:", len(growth[0]))
+print("species max swsh/bdsp/la:", max_swsh, max_bdsp, max_la, "| la personal/learn:", len(la), len(lla), "| pp8a:", len(ppa), "| sv personal/learn/pp9:", len(sv), len(lsv), len(pp9), "| personal:", len(sw), len(bd), "| learn:", len(lsw), len(lbd), "| pp:", len(pp), "| exp len:", len(growth[0]))
